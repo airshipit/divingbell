@@ -1,0 +1,252 @@
+# Copyright 2017 AT&T Intellectual Property.  All other rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+{{- $daemonsets := list "sysctl" "mounts" "ethtool" }}
+{{- $envAll := . }}
+{{- range $daemonset := $daemonsets }}
+
+  {{- $daemonset_root_name := printf (print $.Chart.Name "-" $daemonset) }}
+  {{- set $.Values "__daemonset_list" list }}
+  {{- set $.Values "__default" dict }}
+  {{- if hasKey $.Values.conf "overrides" }}
+    {{- range $key, $val := $.Values.conf.overrides }}
+
+      {{- if eq $key $daemonset_root_name }}
+        {{- range $type, $type_data := . }}
+
+          {{- if eq $type "hosts" }}
+            {{- range $host_data := . }}
+              # dictionary that will contain all info needed to generate this
+              # iteration of the daemonset
+              {{- $current_dict := dict }}
+
+              # generate daemonset name
+              {{- $name := printf (print $daemonset_root_name "-" $host_data.name) }}
+              {{- set $current_dict "name" $name }}
+
+              # apply overrides
+              {{- $override_conf_copy := $host_data.conf }}
+              # Omit overrides because they are not needed, and
+              # because it causes a stack overflow during compilation
+              {{- $root_conf_copy := omit $.Values.conf "overrides" }}
+              {{- $merged_dict := merge $override_conf_copy $root_conf_copy }}
+              {{- set $current_dict "nodeData" $merged_dict }}
+
+              # Schedule to this host explicitly.
+              {{- $nodeSelector_dict := dict }}
+
+              {{- set $nodeSelector_dict "key" "kubernetes.io/hostname" }}
+              {{- set $nodeSelector_dict "operator" "In" }}
+
+              {{- $values_list := list $host_data.name }}
+              {{- set $nodeSelector_dict "values" $values_list }}
+
+              {{- $list_aggregate := list $nodeSelector_dict }}
+              {{- set $current_dict "matchExpressions" $list_aggregate }}
+
+              # store completed daemonset entry/info into global list
+              {{- $list_aggregate := append $.Values.__daemonset_list $current_dict }}
+              {{- set $.Values "__daemonset_list" $list_aggregate }}
+
+            {{- end }}
+          {{- end }}
+
+          {{- if eq $type "labels" }}
+            {{- range $label_data := . }}
+              # dictionary that will contain all info needed to generate this
+              # iteration of the daemonset.
+              {{- set $.Values "__current_label" dict }}
+
+              # generate daemonset name
+              {{- $name := printf (print $daemonset_root_name "-" $label_data.label.key) }}
+              {{- set $.Values.__current_label "name" $name }}
+
+              # apply overrides
+              {{- $override_conf_copy := $label_data.conf }}
+              # Omit overrides because they are not needed, and
+              # because it causes a stack overflow during compilation
+              {{- $root_conf_copy := omit $.Values.conf "overrides" }}
+              {{- $merged_dict := merge $override_conf_copy $root_conf_copy }}
+              {{- set $.Values.__current_label "nodeData" $merged_dict }}
+
+              # Schedule to the provided label value(s)
+              {{- $label_dict := omit $label_data.label "NULL" }}
+              {{- set $label_dict "operator" "In" }}
+              {{- $list_aggregate := list $label_dict }}
+              {{- set $.Values.__current_label "matchExpressions" $list_aggregate }}
+
+              # Do not schedule to any other specified labels
+              {{- $other_labels := without $type_data $label_data }}
+              {{- range $label_data2 := $other_labels }}
+                {{- $label_dict := omit $label_data2.label "NULL" }}
+
+                {{- set $label_dict "operator" "NotIn" }}
+
+                {{- $list_aggregate := append $.Values.__current_label.matchExpressions $label_dict }}
+                {{- set $.Values.__current_label "matchExpressions" $list_aggregate }}
+              {{- end }}
+
+              # Do not schedule to any other specified hosts
+              {{- range $type, $type_data := $val }}
+                {{- if eq $type "hosts" }}
+                  {{- range $host_data := . }}
+                    {{- $label_dict := dict }}
+
+                    {{- set $label_dict "key" "kubernetes.io/hostname" }}
+                    {{- set $label_dict "operator" "NotIn" }}
+
+                    {{- $values_list := list $host_data.name }}
+                    {{- set $label_dict "values" $values_list }}
+
+                    {{- $list_aggregate := append $.Values.__current_label.matchExpressions $label_dict }}
+                    {{- set $.Values.__current_label "matchExpressions" $list_aggregate }}
+                  {{- end }}
+                {{- end }}
+              {{- end }}
+
+              # store completed daemonset entry/info into global list
+              {{- $list_aggregate := append $.Values.__daemonset_list $.Values.__current_label }}
+              {{- set $.Values "__daemonset_list" $list_aggregate }}
+              {{- unset $.Values "__current_label" }}
+
+            {{- end }}
+          {{- end }}
+        {{- end }}
+
+        # scheduler exceptions for the default daemonset
+        {{- set $.Values.__default "matchExpressions" list }}
+
+        {{- range $type, $type_data := . }}
+          # Do not schedule to other specified labels
+          {{- if eq $type "labels" }}
+            {{- range $label_data := . }}
+              {{- $default_dict := omit $label_data.label "NULL" }}
+
+              {{- set $default_dict "operator" "NotIn" }}
+
+              {{- $list_aggregate := append $.Values.__default.matchExpressions $default_dict }}
+              {{- set $.Values.__default "matchExpressions" $list_aggregate }}
+            {{- end }}
+          {{- end }}
+          # Do not schedule to other specified hosts
+          {{- if eq $type "hosts" }}
+            {{- range $host_data := . }}
+              {{- $default_dict := dict }}
+
+              {{- set $default_dict "key" "kubernetes.io/hostname" }}
+              {{- set $default_dict "operator" "NotIn" }}
+
+              {{- $values_list := list $host_data.name }}
+              {{- set $default_dict "values" $values_list }}
+
+              {{- $list_aggregate := append $.Values.__default.matchExpressions $default_dict }}
+              {{- set $.Values.__default "matchExpressions" $list_aggregate }}
+            {{- end }}
+          {{- end }}
+        {{- end }}
+
+      {{- end }}
+    {{- end }}
+  {{- end }}
+
+  # generate the default daemonset
+
+  # name
+  {{- $name := printf (print $daemonset_root_name "-default") }}
+  {{- set $.Values.__default "name" $name }}
+
+  # use values.conf as-is, minus overrides
+  {{- $root_conf_copy := omit $.Values.conf "overrides" }}
+  {{- set $.Values.__default "nodeData" $root_conf_copy }}
+
+  # add to global list
+  {{- $list_aggregate := append $.Values.__daemonset_list $.Values.__default }}
+  {{- set $.Values "__daemonset_list" $list_aggregate }}
+  {{- unset $.Values "__default" }}
+
+  {{- range $current_dict := $.Values.__daemonset_list }}
+    {{- $template_location := printf (print "bin/_" $daemonset ".sh.tpl") | toString -}}
+    # referenced by helm toolkit
+    {{- set $current_dict.nodeData "Template" dict -}}
+    {{- set $current_dict.nodeData.Template "Name" $.Template.Name }}
+    # name needs to be a DNS-1123 compliant name
+    # generate a uuid since the version of sprig packaged with helm 2.5.1 does
+    # not contain regex* functions. As a result we wont use $current_dict.name
+    {{- $dns_1123_name := printf (print $.Chart.Name "-" $daemonset "-" uuidv4) | lower }}
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: {{ $dns_1123_name }}
+spec:
+  template:
+    metadata:
+      labels:
+{{ list $envAll $.Chart.Name $daemonset | include "helm-toolkit.snippets.kubernetes_metadata_labels" | indent 8 }}
+      annotations:
+        values-hash: {{ list $current_dict.nodeData . | quote | sha256sum }}
+    spec:
+      {{- if hasKey $current_dict "matchExpressions" }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              {{- range $matchExpression := $current_dict.matchExpressions }}
+              - key: {{ $matchExpression.key }}
+                operator: {{ $matchExpression.operator }}
+                values:
+                {{- range $schedule_val := $matchExpression.values }}
+                - {{ $schedule_val | quote }}
+                {{- end }}
+              {{- end }}
+      {{- end }}
+      hostNetwork: true
+      hostPID: true
+      hostIPC: true
+      containers:
+        - name: {{ $dns_1123_name }}
+          image: {{ $.Values.images.divingbell }}
+          imagePullPolicy: {{ $.Values.images.pull_policy }}
+          command:
+            - /tmp/{{ $daemonset }}.sh
+          volumeMounts:
+          - name: rootfs-{{ $daemonset }}
+            mountPath: {{ $.Values.conf.chroot_mnt_path }}
+          - name: {{ $dns_1123_name }}
+            mountPath: /tmp/{{ $daemonset }}.sh
+            subPath: {{ $daemonset }}
+            readOnly: true
+          securityContext:
+            privileged: true
+      volumes:
+      - name: rootfs-{{ $daemonset }}
+        hostPath:
+          path: /
+      - name: {{ $dns_1123_name }}
+        configMap:
+          name: {{ $dns_1123_name }}
+          defaultMode: 0555
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $dns_1123_name }}
+data:
+  {{ $daemonset }}: |+
+{{- tuple $current_dict.nodeData $template_location $current_dict.nodeData | include "helm-toolkit.utils.configmap_templater" | indent 4 }}
+  {{- end -}}
+  {{- unset $.Values "__daemonset_list" -}}
+{{- end -}}
+

@@ -1,0 +1,6 @@
+1. Put shell error handling into common area (helm-toolkit)
+2. Perform revert operations in scripts before applying new settings
+3. Refactor .sh into .py
+4. Refactor each daemonset to follow the same general systemd pattern; have one
+script that can do all of them to reduce code burden.
+5. yaml validation: check for duplicate items, unused leaves, etc.
