@@ -159,7 +159,8 @@ get_container_status(){
         echo "${CLOGS}"
         exit 1
       fi
-    elif [ "${status}" = 'INFO Putting the daemon to sleep.' ]; then
+    elif [ "${status}" = 'INFO Putting the daemon to sleep.' ] ||
+    [ "${status}" = 'DEBUG + exit 0' ]; then
       if [ "${2}" = 'expect_failure' ]; then
         echo 'Expected pod to die with error, but pod completed successfully'
         echo 'pod logs:'
@@ -580,24 +581,15 @@ test_overrides(){
   # TODO: Implement more robust tests that do not depend on match expression
   # ordering.
 
-  # Verify generated affinity for one of the daemonset labels
+  # Verify generated affinity for test_label
   echo "${tc_output}" | grep '    spec:
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              - key: another_label
-                operator: In
-                values:
-                - "another_value"
-              - key: compute_type
-                operator: NotIn
-                values:
-                - "dpdk"
-                - "sriov"
               - key: test_label
-                operator: NotIn
+                operator: In
                 values:
                 - "test_value"
               - key: kubernetes.io/hostname
@@ -616,6 +608,73 @@ test_overrides(){
   echo '[SUCCESS] overrides test 2 passed successfully' >> "${TEST_RESULTS}" ||
   (echo '[FAILURE] overrides test 2 failed' && exit 1)
 
+  # Verify generated affinity for another_label
+  echo "${tc_output}" | grep '    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: another_label
+                operator: In
+                values:
+                - "another_value"
+              - key: test_label
+                operator: NotIn
+                values:
+                - "test_value"
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - "superhost"
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - "helm1"
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - "specialhost"
+      hostNetwork: true' &&
+  echo '[SUCCESS] overrides test 3 passed successfully' >> "${TEST_RESULTS}" ||
+  (echo '[FAILURE] overrides test 3 failed' && exit 1)
+
+  # Verify generated affinity for compute_type
+  echo "${tc_output}" | grep '    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: compute_type
+                operator: In
+                values:
+                - "dpdk"
+                - "sriov"
+              - key: another_label
+                operator: NotIn
+                values:
+                - "another_value"
+              - key: test_label
+                operator: NotIn
+                values:
+                - "test_value"
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - "superhost"
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - "helm1"
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - "specialhost"
+      hostNetwork: true' &&
+  echo '[SUCCESS] overrides test 4 passed successfully' >> "${TEST_RESULTS}" ||
+  (echo '[FAILURE] overrides test 4 failed' && exit 1)
+
   # Verify generated affinity for one of the daemonset hosts
   echo "${tc_output}" | grep '    spec:
       affinity:
@@ -629,8 +688,8 @@ test_overrides(){
                 - "soup"
                 - "chips"
       hostNetwork: true' &&
-  echo '[SUCCESS] overrides test 3 passed successfully' >> "${TEST_RESULTS}" ||
-  (echo '[FAILURE] overrides test 3 failed' && exit 1)
+  echo '[SUCCESS] overrides test 5 passed successfully' >> "${TEST_RESULTS}" ||
+  (echo '[FAILURE] overrides test 5 failed' && exit 1)
 
   # Verify generated affinity for one of the daemonset defaults
   echo "${tc_output}" | grep '    spec:
@@ -665,8 +724,8 @@ test_overrides(){
                 values:
                 - "test_value"
       hostNetwork: true' &&
-  echo '[SUCCESS] overrides test 4 passed successfully' >> "${TEST_RESULTS}" ||
-  (echo '[FAILURE] overrides test 4 failed' && exit 1)
+  echo '[SUCCESS] overrides test 6 passed successfully' >> "${TEST_RESULTS}" ||
+  (echo '[FAILURE] overrides test 6 failed' && exit 1)
 
   overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-functional.yaml
   key1_override_val=0
@@ -686,7 +745,7 @@ test_overrides(){
   get_container_status sysctl
   _test_sysctl_default $SYSCTL_KEY1 $key1_override_val
   _test_sysctl_default $SYSCTL_KEY2 $key2_non_override_val
-  echo '[SUCCESS] overrides test 5 passed successfully' >> "${TEST_RESULTS}"
+  echo '[SUCCESS] overrides test 7 passed successfully' >> "${TEST_RESULTS}"
 
 }
 

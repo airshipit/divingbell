@@ -164,11 +164,10 @@ precedence and are used for that node. The label overrides are not used in this
 case. This is especially important to note if you are defining new host
 overrides for a node that is already consuming matching label overrides, as
 defining a host override would make those label overrides no longer apply.
-2. Daemonsets are generated regardless of the current state of the environment.
-Ex: If your environment consists of a single node that matches a host override,
-the chart will still generate a default daemonset which would fail to schedule
-in this example. Likewise if the host or label in the override return no
-candidates, these would also fail to schedule.
+2. In the event of label conflicts, the last applicable label override defined
+takes precedence. In this example, overrides defined for "another_label" would
+take precedence and be applied to nodes that contained both of the defined
+labels.
 
 Recorded Demo
 -------------

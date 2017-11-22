@@ -63,6 +63,7 @@
           {{- end }}
 
           {{- if eq $type "labels" }}
+            {{- set $.Values "__label_list" . }}
             {{- range $label_data := . }}
               # dictionary that will contain all info needed to generate this
               # iteration of the daemonset.
@@ -86,8 +87,10 @@
               {{- $list_aggregate := list $label_dict }}
               {{- set $.Values.__current_label "matchExpressions" $list_aggregate }}
 
-              # Do not schedule to any other specified labels
-              {{- $other_labels := without $type_data $label_data }}
+              # Do not schedule to other specified labels, with higher
+              # precedence as the list position increases. Last defined label
+              # is highest priority.
+              {{- $other_labels := without $.Values.__label_list $label_data }}
               {{- range $label_data2 := $other_labels }}
                 {{- $label_dict := omit $label_data2.label "NULL" }}
 
@@ -96,6 +99,7 @@
                 {{- $list_aggregate := append $.Values.__current_label.matchExpressions $label_dict }}
                 {{- set $.Values.__current_label "matchExpressions" $list_aggregate }}
               {{- end }}
+              {{- set $.Values "__label_list" $other_labels }}
 
               # Do not schedule to any other specified hosts
               {{- range $type, $type_data := $val }}
