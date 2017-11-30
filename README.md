@@ -128,7 +128,7 @@ conf:
     net.ipv6.conf.all.forwarding: 1
     fs.file-max: 9999
   overrides:
-    divingbell-sysctl:
+    divingbell_sysctl:
       labels:
       - label:
           key: compute_type

@@ -18,7 +18,7 @@
 
 set -e
 
-cat <<'EOF' > {{ .chroot_mnt_path | quote }}/tmp/mounts_host.sh
+cat <<'EOF' > {{ .Values.conf.chroot_mnt_path | quote }}/tmp/mounts_host.sh
 {{ include "divingbell.shcommon" . }}
 
 old_mounts_path='/var/divingbell/mounts'
@@ -105,7 +105,7 @@ WantedBy=local-fs.target"
   curr_mounts="${curr_mounts}${systemd_name}"$'\n'
 }
 
-{{- range .mounts }}
+{{- range .Values.conf.mounts }}
   {{- range $key, $value := . }}
     {{ $key }}={{ $value | quote }} \
   {{- end }}
@@ -141,8 +141,8 @@ fi
 exit 0
 EOF
 
-chmod 755 {{ .chroot_mnt_path | quote }}/tmp/mounts_host.sh
-chroot {{ .chroot_mnt_path | quote }} /tmp/mounts_host.sh
+chmod 755 {{ .Values.conf.chroot_mnt_path | quote }}/tmp/mounts_host.sh
+chroot {{ .Values.conf.chroot_mnt_path | quote }} /tmp/mounts_host.sh
 
 sleep 1
 echo 'INFO Putting the daemon to sleep.'

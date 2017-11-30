@@ -18,7 +18,7 @@
 
 set -e
 
-cat <<'EOF' > {{ .chroot_mnt_path | quote }}/tmp/ethtool_host.sh
+cat <<'EOF' > {{ .Values.conf.chroot_mnt_path | quote }}/tmp/ethtool_host.sh
 {{ include "divingbell.shcommon" . }}
 
 old_ethtool_path='/var/divingbell/ethtool'
@@ -150,7 +150,7 @@ WantedBy=multi-user.target"
   curr_ethtool="${curr_ethtool}${systemd_name}"$'\n'
 }
 
-{{- range $iface, $unused := .ethtool }}
+{{- range $iface, $unused := .Values.conf.ethtool }}
   {{- range $ethtool_key, $ethtool_val := . }}
     device={{ $iface | quote }} \
     user_key={{ $ethtool_key | quote }} \
@@ -211,8 +211,8 @@ fi
 exit 0
 EOF
 
-chmod 755 {{ .chroot_mnt_path | quote }}/tmp/ethtool_host.sh
-chroot {{ .chroot_mnt_path | quote }} /tmp/ethtool_host.sh
+chmod 755 {{ .Values.conf.chroot_mnt_path | quote }}/tmp/ethtool_host.sh
+chroot {{ .Values.conf.chroot_mnt_path | quote }} /tmp/ethtool_host.sh
 
 sleep 1
 echo 'INFO Putting the daemon to sleep.'

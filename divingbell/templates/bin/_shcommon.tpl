@@ -5,7 +5,7 @@ set -o errtrace
 set -o pipefail
 
 declare -Ax __log_types=(
-{{- if .log_colors }}
+{{- if .Values.conf.log_colors }}
   [ERROR]='fd=2, color=\e[01;31m'
   [TRACE]='fd=2, color=\e[01;31m'
   [WARN]='fd=1, color=\e[01;93m'

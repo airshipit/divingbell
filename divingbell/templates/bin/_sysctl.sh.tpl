@@ -18,7 +18,7 @@
 
 set -e
 
-cat <<'EOF' > {{ .chroot_mnt_path | quote }}/tmp/sysctl_host.sh
+cat <<'EOF' > {{ .Values.conf.chroot_mnt_path | quote }}/tmp/sysctl_host.sh
 {{ include "divingbell.shcommon" . }}
 
 # TODO: Make prefix configurable to control param loading order
@@ -89,7 +89,7 @@ add_sysctl_param(){
   curr_settings="${curr_settings}${fname_prefix}${system_key}.conf"$'\n'
 }
 
-{{- range $key, $value := .sysctl }}
+{{- range $key, $value := .Values.conf.sysctl }}
 add_sysctl_param {{ $key | quote }} {{ $value | quote }}
 {{- end }}
 
@@ -126,8 +126,8 @@ fi
 exit 0
 EOF
 
-chmod 755 {{ .chroot_mnt_path | quote }}/tmp/sysctl_host.sh
-chroot {{ .chroot_mnt_path | quote }} /tmp/sysctl_host.sh
+chmod 755 {{ .Values.conf.chroot_mnt_path | quote }}/tmp/sysctl_host.sh
+chroot {{ .Values.conf.chroot_mnt_path | quote }} /tmp/sysctl_host.sh
 
 sleep 1
 echo 'INFO Putting the daemon to sleep.'
