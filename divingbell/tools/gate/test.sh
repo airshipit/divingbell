@@ -33,6 +33,18 @@ ETHTOOL_KEY4=tx-nocache-copy
 ETHTOOL_VAL4_DEFAULT=off
 ETHTOOL_KEY5=tx-checksum-ip-generic
 ETHTOOL_VAL5_DEFAULT=on
+USERNAME1=userone
+USERNAME1_SUDO=true
+USERNAME1_SSHKEY1="ssh-rsa abc123 comment"
+USERNAME2=usertwo
+USERNAME2_SUDO=false
+USERNAME2_SSHKEY1="ssh-rsa xyz456 comment"
+USERNAME2_SSHKEY2="ssh-rsa qwe789 comment"
+USERNAME2_SSHKEY3="ssh-rsa rfv000 comment"
+USERNAME3=userthree
+USERNAME3_SUDO=true
+USERNAME4=userfour
+USERNAME4_SUDO=false
 nic_info="$(lshw -class network)"
 physical_nic=''
 IFS=$'\n'
@@ -96,6 +108,14 @@ _write_ethtool(){
   fi
 }
 
+_reset_account(){
+  if [ -n "$1" ]; then
+    sudo deluser $1 >& /dev/null || true
+    sudo rm -r /home/$1 >& /dev/null || true
+    sudo rm /etc/sudoers.d/*$1* >& /dev/null || true
+  fi
+}
+
 init_default_state(){
   if [ "${1}" = 'make' ]; then
     (cd ../../../; make)
@@ -112,6 +132,11 @@ init_default_state(){
   _write_ethtool ${DEVICE} ${ETHTOOL_KEY3} ${ETHTOOL_VAL3_DEFAULT}
   _write_ethtool ${DEVICE} ${ETHTOOL_KEY4} ${ETHTOOL_VAL4_DEFAULT}
   _write_ethtool ${DEVICE} ${ETHTOOL_KEY5} ${ETHTOOL_VAL5_DEFAULT}
+  # Remove any created accounts, SSH keys
+  _reset_account ${USERNAME1}
+  _reset_account ${USERNAME2}
+  _reset_account ${USERNAME3}
+  _reset_account ${USERNAME4}
 }
 
 install(){
@@ -134,9 +159,9 @@ get_container_status(){
   local log_connect_sleep_interval=2
   local wait_time=0
   while : ; do
-    kubectl logs "${container}" --namespace="${NAME}" > /dev/null && break ||
-      echo "Waiting for container logs..." &&
-      wait_time=$((${wait_time} + ${log_connect_sleep_interval})) &&
+    kubectl logs "${container}" --namespace="${NAME}" > /dev/null && break || \
+      echo "Waiting for container logs..." && \
+      wait_time=$((${wait_time} + ${log_connect_sleep_interval})) && \
       sleep ${log_connect_sleep_interval}
     if [ ${wait_time} -ge ${log_connect_timeout} ]; then
       echo "Hit timeout while waiting for container logs to become available."
@@ -149,7 +174,8 @@ get_container_status(){
   while : ; do
     CLOGS="$(kubectl logs --namespace="${NAME}" "${container}" 2>&1)"
     local status="$(echo "${CLOGS}" | tail -1)"
-    if [[ ${status} = *ERROR* ]] || [[ ${status} = *TRACE* ]]; then
+    if [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *ERROR* ]] ||
+       [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *TRACE* ]]; then
       if [ "${2}" = 'expect_failure' ]; then
         echo 'Pod exited as expected'
         break
@@ -159,8 +185,8 @@ get_container_status(){
         echo "${CLOGS}"
         exit 1
       fi
-    elif [ "${status}" = 'INFO Putting the daemon to sleep.' ] ||
-    [ "${status}" = 'DEBUG + exit 0' ]; then
+    elif [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *'INFO Putting the daemon to sleep.'* ]] ||
+    [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *'DEBUG + exit 0'* ]]; then
       if [ "${2}" = 'expect_failure' ]; then
         echo 'Expected pod to die with error, but pod completed successfully'
         echo 'pod logs:'
@@ -475,6 +501,138 @@ test_ethtool(){
   echo '[SUCCESS] ethtool test7 passed successfully' >> "${TEST_RESULTS}"
 }
 
+_test_user_enabled(){
+  username=$1
+  user_enabled=$2
+
+  if [ "${user_enabled}" = "true" ]; then
+    # verify the user is there and not set to expire
+    getent passwd $username >& /dev/null
+    test "$(chage -l ${username} | grep 'Account expires' | cut -d':' -f2 |
+            tr -d '[:space:]')" = "never"
+  else
+    # If the user exists, verify it's not non-expiring
+    if [ -n "$(getent passwd $username)" ]; then
+      test "$(chage -l ${username} | grep 'Account expires' | cut -d':' -f2 |
+              tr -d '[:space:]')" != "never"
+    fi
+  fi
+}
+
+_test_sudo_enabled(){
+  username=$1
+  sudo_enable=$2
+  sudoers_file=/etc/sudoers.d/*$username*
+
+  if [ "${sudo_enable}" = "true" ]; then
+    test -f $sudoers_file
+  else
+    test ! -f $sudoers_file
+  fi
+}
+
+_test_ssh_keys(){
+  username=$1
+  sshkey=$2
+  ssh_file=/home/$username/.ssh/authorized_keys
+
+  if [ "$sshkey" = "false" ]; then
+    test ! -f "${ssh_file}"
+  else
+    grep "$sshkey" "${ssh_file}"
+  fi
+}
+
+test_uamlite(){
+  # Test the first set of values
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
+  echo "conf:
+  uamlite:
+    users:
+    - user_name: ${USERNAME1}
+      user_sudo: ${USERNAME1_SUDO}
+      user_sshkeys:
+      - ${USERNAME1_SSHKEY1}
+    - user_name: ${USERNAME2}
+      user_sudo: ${USERNAME2_SUDO}
+      user_sshkeys:
+      - ${USERNAME2_SSHKEY1}
+      - ${USERNAME2_SSHKEY2}
+      - ${USERNAME2_SSHKEY3}
+    - user_name: ${USERNAME3}
+      user_sudo: ${USERNAME3_SUDO}
+    - user_name: ${USERNAME4}" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status uamlite
+  _test_user_enabled ${USERNAME1} true
+  _test_sudo_enabled ${USERNAME1} ${USERNAME1_SUDO}
+  _test_ssh_keys     ${USERNAME1} "${USERNAME1_SSHKEY1}"
+  _test_user_enabled ${USERNAME2} true
+  _test_sudo_enabled ${USERNAME2} ${USERNAME2_SUDO}
+  _test_ssh_keys     ${USERNAME2} "${USERNAME2_SSHKEY1}"
+  _test_ssh_keys     ${USERNAME2} "${USERNAME2_SSHKEY2}"
+  _test_ssh_keys     ${USERNAME2} "${USERNAME2_SSHKEY3}"
+  _test_user_enabled ${USERNAME3} true
+  _test_sudo_enabled ${USERNAME3} ${USERNAME3_SUDO}
+  _test_ssh_keys     ${USERNAME3} false
+  _test_user_enabled ${USERNAME4} true
+  _test_sudo_enabled ${USERNAME4} ${USERNAME4_SUDO}
+  _test_ssh_keys     ${USERNAME4} false
+  echo '[SUCCESS] uamlite test1 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test an updated set of values
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set2.yaml
+  uname1_sudo=false
+  uname2_sudo=true
+  uname3_sudo=false
+  echo "conf:
+  uamlite:
+    users:
+    - user_name: ${USERNAME1}
+      user_sudo: ${uname1_sudo}
+    - user_name: ${USERNAME2}
+      user_sudo: ${uname2_sudo}
+      user_sshkeys:
+      - ${USERNAME2_SSHKEY1}
+      - ${USERNAME2_SSHKEY2}
+    - user_name: ${USERNAME3}
+      user_sudo: ${uname3_sudo}
+      user_sshkeys:
+      - ${USERNAME1_SSHKEY1}
+      - ${USERNAME2_SSHKEY3}
+    - user_name: ${USERNAME4}" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status uamlite
+  _test_user_enabled ${USERNAME1} true
+  _test_sudo_enabled ${USERNAME1} ${uname1_sudo}
+  _test_ssh_keys     ${USERNAME1} false
+  _test_user_enabled ${USERNAME2} true
+  _test_sudo_enabled ${USERNAME2} ${uname2_sudo}
+  _test_ssh_keys     ${USERNAME2} "${USERNAME2_SSHKEY1}"
+  _test_ssh_keys     ${USERNAME2} "${USERNAME2_SSHKEY2}"
+  _test_user_enabled ${USERNAME3} true
+  _test_sudo_enabled ${USERNAME3} ${uname3_sudo}
+  _test_ssh_keys     ${USERNAME3} "${USERNAME1_SSHKEY1}"
+  _test_ssh_keys     ${USERNAME3} "${USERNAME2_SSHKEY3}"
+  _test_user_enabled ${USERNAME4} true
+  _test_sudo_enabled ${USERNAME4} ${USERNAME4_SUDO}
+  _test_ssh_keys     ${USERNAME4} false
+  echo '[SUCCESS] uamlite test2 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test revert/rollback functionality
+  install_base
+  get_container_status uamlite
+  _test_user_enabled ${USERNAME1} false
+  _test_sudo_enabled ${USERNAME1} false
+  _test_user_enabled ${USERNAME2} false
+  _test_sudo_enabled ${USERNAME2} false
+  _test_user_enabled ${USERNAME3} false
+  _test_sudo_enabled ${USERNAME3} false
+  _test_user_enabled ${USERNAME4} false
+  _test_sudo_enabled ${USERNAME4} false
+  echo '[SUCCESS] uamlite test3 passed successfully' >> "${TEST_RESULTS}"
+}
+
 # test daemonset value overrides for hosts and labels
 test_overrides(){
   overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-dryrun.yaml
@@ -752,6 +910,7 @@ install_base
 test_sysctl
 test_mounts
 test_ethtool
+test_uamlite
 purge_containers
 test_overrides
 

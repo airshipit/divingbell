@@ -15,8 +15,9 @@
 HELM := helm
 TASK := build
 
-EXCLUDES := helm-toolkit doc tests tools logs
+EXCLUDES := helm-toolkit docs tests tools logs
 CHARTS := helm-toolkit $(filter-out $(EXCLUDES), $(patsubst %/.,%,$(wildcard */.)))
+CHART := divingbell
 
 all: $(CHARTS)
 
@@ -42,3 +43,8 @@ clean:
 	rm -rf */templates/_globals.tpl
 
 .PHONY: $(EXCLUDES) $(CHARTS)
+
+.PHONY: charts
+charts: clean
+	$(HELM) dep up $(CHART)
+	$(HELM) package $(CHART)

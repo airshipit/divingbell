@@ -112,10 +112,20 @@ packages
 
 Not implemented
 
-users
-^^^^^
+uamlite
+^^^^^^^
 
-Not implemented
+Used to manage host level local user accounts, their SSH keys, and their sudo
+access. Ex::
+
+    conf:
+      uamlite:
+        users:
+        - user_name: testuser
+          user_sudo: True
+          user_sshkeys:
+          - ssh-rsa AAAAB3N... key1-comment
+          - ssh-rsa AAAAVY6... key2-comment
 
 Node specific configurations
 ----------------------------
