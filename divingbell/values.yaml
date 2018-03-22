@@ -24,3 +24,25 @@ images:
 conf:
   chroot_mnt_path: '/mnt'
   log_colors: False
+
+pod:
+  lifecycle:
+    upgrades:
+      daemonsets:
+        pod_replacement_strategy: RollingUpdate
+        ethtool:
+          enabled: true
+          min_ready_seconds: 0
+          max_unavailable: 100%
+        mounts:
+          enabled: true
+          min_ready_seconds: 0
+          max_unavailable: 100%
+        uamlite:
+          enabled: true
+          min_ready_seconds: 0
+          max_unavailable: 100%
+        sysctl:
+          enabled: true
+          min_ready_seconds: 0
+          max_unavailable: 100%

@@ -26,12 +26,14 @@ $(CHARTS):
 	@echo "===== Processing [$@] chart ====="
 	@make $(TASK)-$@
 
-init-%:
-	if [ -f $*/Makefile ]; then make -C $*; fi
-	if [ -f $*/requirements.yaml ]; then helm dep up $*; fi
+init-%: clean
+	DEP_UP_LIST=$* tools/helm_tk.sh $(HELM)
 
 lint-%: init-%
 	if [ -d $* ]; then $(HELM) lint $*; fi
+
+dryrun-%: init-%
+	$(HELM) template $*
 
 build-%: lint-%
 	if [ -d $* ]; then $(HELM) package $*; fi
@@ -45,6 +47,4 @@ clean:
 .PHONY: $(EXCLUDES) $(CHARTS)
 
 .PHONY: charts
-charts: clean
-	$(HELM) dep up $(CHART)
-	$(HELM) package $(CHART)
+charts: clean build-$(CHART)
