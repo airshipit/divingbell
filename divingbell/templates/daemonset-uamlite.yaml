@@ -38,6 +38,7 @@ spec:
       - name: {{ $daemonset }}
         image: {{ .Values.images.divingbell }}
         imagePullPolicy: {{ .Values.images.pull_policy }}
+{{ tuple $envAll $envAll.Values.pod.resources.uamlite | include "helm-toolkit.snippets.kubernetes_resources" | indent 8 }}
         command:
         - /tmp/{{ $daemonset }}.sh
         volumeMounts:
