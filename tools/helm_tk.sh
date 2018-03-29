@@ -56,8 +56,9 @@ git clone --depth 1 $HTK_REPO || true
 pushd openstack-helm/$HTK_PATH
 
 git pull
-helm_serve
 make helm-toolkit
+helm_serve
+
 popd && popd
 for c in $DEP_UP_LIST
 do

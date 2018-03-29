@@ -16,12 +16,12 @@ HELM := helm
 TASK := build
 
 EXCLUDES := helm-toolkit docs tests tools logs
-CHARTS := helm-toolkit $(filter-out $(EXCLUDES), $(patsubst %/.,%,$(wildcard */.)))
+CHARTS := $(filter-out $(EXCLUDES), $(patsubst %/.,%,$(wildcard */.)))
 CHART := divingbell
 
-all: $(CHARTS)
+all: $(CHART)
 
-$(CHARTS):
+$(CHART):
 	@echo
 	@echo "===== Processing [$@] chart ====="
 	@make $(TASK)-$@
