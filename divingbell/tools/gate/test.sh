@@ -728,9 +728,9 @@ test_overrides(){
 
   # Compare against expected number of generated daemonsets
   daemonset_count="$(echo "${tc_output}" | grep 'kind: DaemonSet' | wc -l)"
-  if [ "${daemonset_count}" != "11" ]; then
+  if [ "${daemonset_count}" != "12" ]; then
     echo '[FAILURE] overrides test 1 failed' >> "${TEST_RESULTS}"
-    echo "Expected 11 daemonsets; got '${daemonset_count}'" >> "${TEST_RESULTS}"
+    echo "Expected 12 daemonsets; got '${daemonset_count}'" >> "${TEST_RESULTS}"
     exit 1
   else
     echo '[SUCCESS] overrides test 1 passed successfully' >> "${TEST_RESULTS}"

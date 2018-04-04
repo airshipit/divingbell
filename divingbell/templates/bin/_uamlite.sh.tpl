@@ -118,27 +118,33 @@ add_sshkeys(){
 
 # TODO: This should be done before applying new settings rather than after
 # Expire any previously defined users that are no longer defined
-users="$(getent passwd | grep ${keyword} | cut -d':' -f1)"
-echo "$users" | sort > /tmp/prev_users
-echo "$curr_userlist" | sort > /tmp/curr_users
-revert_list="$(comm -23 /tmp/prev_users /tmp/curr_users)"
-IFS=$'\n'
-for user in ${revert_list}; do
-  # We expire rather than delete the user to maintain local UID FS consistency
-  usermod --expiredate 1 ${user}
-  log.INFO "User '${user}' has been disabled (expired)"
-done
+if [ -n "$(getent passwd | grep ${keyword} | cut -d':' -f1)" ]; then
+  users="$(getent passwd | grep ${keyword} | cut -d':' -f1)"
+  echo "$users" | sort > /tmp/prev_users
+  echo "$curr_userlist" | sort > /tmp/curr_users
+  revert_list="$(comm -23 /tmp/prev_users /tmp/curr_users)"
+  IFS=$'\n'
+  for user in ${revert_list}; do
+    # We expire rather than delete the user to maintain local UID FS consistency
+    usermod --expiredate 1 ${user}
+    log.INFO "User '${user}' has been disabled (expired)"
+  done
+  unset IFS
+fi
 
 # Delete any previous user sudo access that is no longer defined
-sudoers="$(find /etc/sudoers.d | grep ${keyword})"
-echo "$sudoers" | sort > /tmp/prev_sudoers
-echo "$curr_sudoers" | sort > /tmp/curr_sudoers
-revert_list="$(comm -23 /tmp/prev_sudoers /tmp/curr_sudoers)"
-IFS=$'\n'
-for sudo_file in ${revert_list}; do
-  rm "${sudo_file}"
-  log.INFO "Sudoers file '${sudo_file}' has been deleted"
-done
+if [ -n "$(find /etc/sudoers.d | grep ${keyword})" ]; then
+  sudoers="$(find /etc/sudoers.d | grep ${keyword})"
+  echo "$sudoers" | sort > /tmp/prev_sudoers
+  echo "$curr_sudoers" | sort > /tmp/curr_sudoers
+  revert_list="$(comm -23 /tmp/prev_sudoers /tmp/curr_sudoers)"
+  IFS=$'\n'
+  for sudo_file in ${revert_list}; do
+    rm -v "${sudo_file}"
+    log.INFO "Sudoers file '${sudo_file}' has been deleted"
+  done
+  unset IFS
+fi
 
 if [ -n "${builtin_acct}" ] && [ -n "$(getent passwd ${builtin_acct})" ]; then
   # Disable built-in account as long as there was at least one account defined
@@ -147,6 +153,8 @@ if [ -n "${builtin_acct}" ] && [ -n "$(getent passwd ${builtin_acct})" ]; then
     if [ "$(chage -l ${builtin_acct} | grep 'Account expires' | cut -d':' -f2 |
           tr -d '[:space:]')" = "never" ]; then
       usermod --expiredate 1 ${builtin_acct}
+      log.INFO "Built-in account '${builtin_acct}' was expired because at least"
+      log.INFO "one other account was defined with an SSH key."
     fi
   # Re-enable built-in account as a fallback in the event that are no other
   # accounts defined in this chart with a ssh key present
@@ -154,8 +162,12 @@ if [ -n "${builtin_acct}" ] && [ -n "$(getent passwd ${builtin_acct})" ]; then
     if [ "$(chage -l ${builtin_acct} | grep 'Account expires' | cut -d':' -f2 |
           tr -d '[:space:]')" != "never" ]; then
       usermod --expiredate "" ${builtin_acct}
+      log.INFO "Built-in account '${builtin_acct}' was un-expired because there"
+      log.INFO "were no other accounts defined with an SSH key."
     fi
   fi
+elif [ -n "${builtin_acct}" ]; then
+  log.WARN "Could not find built-in account '${builtin_acct}'."
 fi
 
 if [ -n "${curr_userlist}" ]; then
