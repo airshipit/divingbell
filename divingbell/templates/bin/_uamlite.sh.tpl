@@ -95,12 +95,20 @@ add_sshkeys(){
         (rm "${sshkey_file}" && die "Error setting ownership on ${sshkey_dir}")
       log.INFO "User '${user_name}' has had SSH keys deployed: ${user_sshkeys}"
     fi
-    custom_sshkeys_present=true
+
+    # In the event that the user specifies ssh keys for the built-in account and
+    # no others, do not expire the built-in account
+    if [ "${user_name}" != "${builtin_acct}" ]; then
+      expire_builtin_acct=true
+    fi
   fi
 
 }
 
 {{- if hasKey .Values.conf "uamlite" }}
+{{- if hasKey .Values.conf.uamlite "purge_expired_users" }}
+purge_expired_users={{ .Values.conf.uamlite.purge_expired_users | quote }}
+{{- end }}
 {{- if hasKey .Values.conf.uamlite "users" }}
 {{- range $item := .Values.conf.uamlite.users }}
   {{- range $key, $value := . }}
@@ -126,8 +134,14 @@ if [ -n "$(getent passwd | grep ${keyword} | cut -d':' -f1)" ]; then
   IFS=$'\n'
   for user in ${revert_list}; do
     # We expire rather than delete the user to maintain local UID FS consistency
-    usermod --expiredate 1 ${user}
-    log.INFO "User '${user}' has been disabled (expired)"
+    # unless purge is explicity requested (remove user and user home dir).
+    if [ "${purge_expired_users}" = "true" ]; then
+      deluser ${user} --remove-home
+      log.INFO "User '${user}' and home directory have been purged."
+    else
+      usermod --expiredate 1 ${user}
+      log.INFO "User '${user}' has been disabled (expired)"
+    fi
   done
   unset IFS
 fi
@@ -149,7 +163,7 @@ fi
 if [ -n "${builtin_acct}" ] && [ -n "$(getent passwd ${builtin_acct})" ]; then
   # Disable built-in account as long as there was at least one account defined
   # in this chart with a ssh key present
-  if [ "${custom_sshkeys_present}" = "true" ]; then
+  if [ "${expire_builtin_acct}" = "true" ]; then
     if [ "$(chage -l ${builtin_acct} | grep 'Account expires' | cut -d':' -f2 |
           tr -d '[:space:]')" = "never" ]; then
       usermod --expiredate 1 ${builtin_acct}

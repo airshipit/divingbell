@@ -511,11 +511,24 @@ _test_user_enabled(){
     test "$(chage -l ${username} | grep 'Account expires' | cut -d':' -f2 |
             tr -d '[:space:]')" = "never"
   else
-    # If the user exists, verify it's not non-expiring
-    if [ -n "$(getent passwd $username)" ]; then
-      test "$(chage -l ${username} | grep 'Account expires' | cut -d':' -f2 |
-              tr -d '[:space:]')" != "never"
-    fi
+    # Verify user is not non-expiring
+    getent passwd $username >& /dev/null
+    test "$(chage -l ${username} | grep 'Account expires' | cut -d':' -f2 |
+            tr -d '[:space:]')" != "never"
+  fi
+}
+
+_test_user_purged(){
+  username=$1
+
+  # Verify user is no longer defined
+  getent passwd $username >& /dev/null && \
+    echo "Error: User '$username' exists, but was expected it to be purged" && \
+    return 1
+
+  if [ -d /home/$username ]; then
+    echo "Error: User '$username' home dir exists; expected it to be purged"
+    return 1
   fi
 }
 
@@ -631,6 +644,19 @@ test_uamlite(){
   _test_user_enabled ${USERNAME4} false
   _test_sudo_enabled ${USERNAME4} false
   echo '[SUCCESS] uamlite test3 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test purge users flag
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set3.yaml
+  echo "conf:
+  uamlite:
+    purge_expired_users: true" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status uamlite
+  _test_user_purged ${USERNAME1}
+  _test_user_purged ${USERNAME2}
+  _test_user_purged ${USERNAME3}
+  _test_user_purged ${USERNAME4}
+  echo '[SUCCESS] uamlite test4 passed successfully' >> "${TEST_RESULTS}"
 }
 
 # test daemonset value overrides for hosts and labels
