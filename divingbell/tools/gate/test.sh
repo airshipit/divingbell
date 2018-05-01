@@ -41,6 +41,7 @@ USERNAME2_SUDO=false
 USERNAME2_SSHKEY1="ssh-rsa xyz456 comment"
 USERNAME2_SSHKEY2="ssh-rsa qwe789 comment"
 USERNAME2_SSHKEY3="ssh-rsa rfv000 comment"
+USERNAME2_CRYPT_PASSWD='$6$AF.NLpphOJjMVTYC$GD6wyUTy9vIgatoMbtTDYcVtEJqh/Mrx3BRetVstMsNodSyn3ZFIZOMRePpRpGbFArnAxgkL1PtQxsZHCgtFn/'
 USERNAME3=userthree
 USERNAME3_SUDO=true
 USERNAME4=userfour
@@ -556,6 +557,16 @@ _test_ssh_keys(){
   fi
 }
 
+_test_user_passwd(){
+  username=$1
+  crypt_passwd="$2"
+
+  if [ "$crypt_passwd" != "$(getent shadow $username | cut -d':' -f2)" ]; then
+    echo "Error: User '$username' passwd did not match expected val '$crypt_passwd'"
+    return 1
+  fi
+}
+
 test_uamlite(){
   # Test the first set of values
   local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
@@ -568,6 +579,7 @@ test_uamlite(){
       - ${USERNAME1_SSHKEY1}
     - user_name: ${USERNAME2}
       user_sudo: ${USERNAME2_SUDO}
+      user_crypt_passwd: ${USERNAME2_CRYPT_PASSWD}
       user_sshkeys:
       - ${USERNAME2_SSHKEY1}
       - ${USERNAME2_SSHKEY2}
@@ -580,17 +592,21 @@ test_uamlite(){
   _test_user_enabled ${USERNAME1} true
   _test_sudo_enabled ${USERNAME1} ${USERNAME1_SUDO}
   _test_ssh_keys     ${USERNAME1} "${USERNAME1_SSHKEY1}"
+  _test_user_passwd  ${USERNAME1} '*'
   _test_user_enabled ${USERNAME2} true
   _test_sudo_enabled ${USERNAME2} ${USERNAME2_SUDO}
   _test_ssh_keys     ${USERNAME2} "${USERNAME2_SSHKEY1}"
   _test_ssh_keys     ${USERNAME2} "${USERNAME2_SSHKEY2}"
   _test_ssh_keys     ${USERNAME2} "${USERNAME2_SSHKEY3}"
+  _test_user_passwd  ${USERNAME2} ${USERNAME2_CRYPT_PASSWD}
   _test_user_enabled ${USERNAME3} true
   _test_sudo_enabled ${USERNAME3} ${USERNAME3_SUDO}
   _test_ssh_keys     ${USERNAME3} false
+  _test_user_passwd  ${USERNAME3} '*'
   _test_user_enabled ${USERNAME4} true
   _test_sudo_enabled ${USERNAME4} ${USERNAME4_SUDO}
   _test_ssh_keys     ${USERNAME4} false
+  _test_user_passwd  ${USERNAME4} '*'
   echo '[SUCCESS] uamlite test1 passed successfully' >> "${TEST_RESULTS}"
 
   # Test an updated set of values
@@ -619,17 +635,21 @@ test_uamlite(){
   _test_user_enabled ${USERNAME1} true
   _test_sudo_enabled ${USERNAME1} ${uname1_sudo}
   _test_ssh_keys     ${USERNAME1} false
+  _test_user_passwd  ${USERNAME1} '*'
   _test_user_enabled ${USERNAME2} true
   _test_sudo_enabled ${USERNAME2} ${uname2_sudo}
   _test_ssh_keys     ${USERNAME2} "${USERNAME2_SSHKEY1}"
   _test_ssh_keys     ${USERNAME2} "${USERNAME2_SSHKEY2}"
+  _test_user_passwd  ${USERNAME2} '*'
   _test_user_enabled ${USERNAME3} true
   _test_sudo_enabled ${USERNAME3} ${uname3_sudo}
   _test_ssh_keys     ${USERNAME3} "${USERNAME1_SSHKEY1}"
   _test_ssh_keys     ${USERNAME3} "${USERNAME2_SSHKEY3}"
+  _test_user_passwd  ${USERNAME3} '*'
   _test_user_enabled ${USERNAME4} true
   _test_sudo_enabled ${USERNAME4} ${USERNAME4_SUDO}
   _test_ssh_keys     ${USERNAME4} false
+  _test_user_passwd  ${USERNAME4} '*'
   echo '[SUCCESS] uamlite test2 passed successfully' >> "${TEST_RESULTS}"
 
   # Test revert/rollback functionality
@@ -646,7 +666,7 @@ test_uamlite(){
   echo '[SUCCESS] uamlite test3 passed successfully' >> "${TEST_RESULTS}"
 
   # Test purge users flag
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set3.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set4.yaml
   echo "conf:
   uamlite:
     purge_expired_users: true" > "${overrides_yaml}"
@@ -657,6 +677,33 @@ test_uamlite(){
   _test_user_purged ${USERNAME3}
   _test_user_purged ${USERNAME4}
   echo '[SUCCESS] uamlite test4 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test invalid password
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set5.yaml
+  user2_crypt_passwd_invalid='plaintextPassword'
+  echo "conf:
+  uamlite:
+    users:
+    - user_name: ${USERNAME2}
+      user_crypt_passwd: ${user2_crypt_passwd_invalid}" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD PASSWORD' || \
+    (echo "[FAIL] uamlite test5 did not receive expected 'BAD PASSWORD' error" && exit 1)
+  echo '[SUCCESS] uamlite test5 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test invalid SSH key
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set6.yaml
+  user2_bad_sshkey='AAAAB3NzaC1yc2EAAAABIwAAAQEAklOUpkDHrfHY17SbrmT key-comment'
+  echo "conf:
+  uamlite:
+    users:
+    - user_name: ${USERNAME2}
+      user_sshkeys:
+      - ${USERNAME2_SSHKEY1}
+      - ${user2_bad_sshkey}
+      - ${USERNAME2_SSHKEY3}" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD SSH KEY' || \
+    (echo "[FAIL] uamlite test6 did not receive expected 'BAD SSH KEY' error" && exit 1)
+  echo '[SUCCESS] uamlite test6 passed successfully' >> "${TEST_RESULTS}"
 }
 
 # test daemonset value overrides for hosts and labels

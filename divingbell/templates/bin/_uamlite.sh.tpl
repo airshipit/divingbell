@@ -27,6 +27,7 @@ builtin_acct='ubuntu'
 add_user(){
   die_if_null "${user_name}" ", 'user_name' env var not initialized"
   : ${user_sudo:=false}
+  : ${user_crypt_passwd:=*}
 
   # Create user if user does not already exist
   getent passwd ${user_name} && \
@@ -41,10 +42,31 @@ add_user(){
     log.INFO "User '${user_name}' has been unexpired"
   fi
 
+  # Exclude case where user should not have a password set
+  if [ "${user_crypt_passwd}" != '*' ]; then
+    local user_has_passwd=true
+  fi
+  # Set user password if current password does not match desired password
+  local crypt_passwd="$(getent shadow ${user_name} | cut -d':' -f2)"
+  if [ "${crypt_passwd}" != "${user_crypt_passwd}" ]; then
+    usermod -p "${user_crypt_passwd}" ${user_name}
+    if [ "${user_has_passwd}" = 'true' ]; then
+      log.INFO "User '${user_name}' password set successfully"
+    else
+      log.INFO "User '${user_name}' password removed successfully"
+    fi
+  else
+    if [ "${user_has_passwd}" = 'true' ]; then
+      log.INFO "No change required to password for user '${user_name}'"
+    else
+      log.INFO "User '${user_name}' has no password, and none was requested"
+    fi
+  fi
+
   # Add sudoers entry if requested for user
   if [ "${user_sudo}" = 'true' ]; then
     # Add sudoers entry if it does not already exist
-    user_sudo_file=/etc/sudoers.d/${keyword}-${user_name}-sudo
+    local user_sudo_file=/etc/sudoers.d/${keyword}-${user_name}-sudo
     if [ -f "${user_sudo_file}" ] ; then
       log.INFO "User '${user_name}' already added to sudoers: ${user_sudo_file}"
     else
@@ -56,15 +78,21 @@ add_user(){
     log.INFO "User '${user_name}' was not requested sudo access"
   fi
 
+  if [ "${user_has_passwd}" = "true" ] && \
+     [ "${user_sudo}" = "true" ] && \
+     [ "${user_name}" != "${builtin_acct}" ]; then
+    expire_builtin_acct_passwd_vote=true
+  fi
+
   curr_userlist="${curr_userlist}${user_name}"$'\n'
 }
 
 add_sshkeys(){
   die_if_null "${user_name}" ", 'user_name' env var not initialized"
-  user_sshkeys="$@"
+  local user_sshkeys="$@"
 
-  sshkey_dir="/home/${user_name}/.ssh"
-  sshkey_file="${sshkey_dir}/authorized_keys"
+  local sshkey_dir="/home/${user_name}/.ssh"
+  local sshkey_file="${sshkey_dir}/authorized_keys"
   if [ -z "${user_sshkeys}" ]; then
     log.INFO "User '${user_name}' has no SSH keys defined"
     if [ -f "${sshkey_file}" ]; then
@@ -72,11 +100,11 @@ add_sshkeys(){
       log.INFO "User '${user_name}' has had its authorized_keys file wiped"
     fi
   else
-    sshkey_file_contents='# NOTE: This file is managed by divingbell'$'\n'
+    local sshkey_file_contents='# NOTE: This file is managed by divingbell'$'\n'
     for sshkey in "$@"; do
       sshkey_file_contents="${sshkey_file_contents}${sshkey}"$'\n'
     done
-    write_file=false
+    local write_file=false
     if [ -f "${sshkey_file}" ]; then
       if [ "$(cat "${sshkey_file}")" = \
            "$(echo "${sshkey_file_contents}" | head -n-1)" ]; then
@@ -98,33 +126,44 @@ add_sshkeys(){
 
     # In the event that the user specifies ssh keys for the built-in account and
     # no others, do not expire the built-in account
-    if [ "${user_name}" != "${builtin_acct}" ]; then
-      expire_builtin_acct=true
+    if [ "${user_sudo}" = "true" ] && \
+       [ "${user_name}" != "${builtin_acct}" ]; then
+      expire_builtin_acct_ssh_vote=true
     fi
   fi
-
 }
 
 {{- if hasKey .Values.conf "uamlite" }}
 {{- if hasKey .Values.conf.uamlite "purge_expired_users" }}
-purge_expired_users={{ .Values.conf.uamlite.purge_expired_users | quote }}
+purge_expired_users={{ .Values.conf.uamlite.purge_expired_users | squote }}
 {{- end }}
 {{- if hasKey .Values.conf.uamlite "users" }}
 {{- range $item := .Values.conf.uamlite.users }}
   {{- range $key, $value := . }}
-    {{ $key }}={{ $value | quote }} \
+    {{- if eq $key "user_crypt_passwd" }}
+      {{/* supported crypt types are 2a (blowfish), 1 (md5), 5 (sha-256), and 6 (sha-512) */}}
+      {{- if not (or (regexMatch "\\$2a\\$.*\\$.*" $value) (regexMatch "\\$[156]\\$.*\\$.*" $value)) }}
+        {{- fail (print "BAD PASSWORD FOR '" $item.user_name "': The 'user_crypt_passwd' specified for '" $item.user_name "' does not pass regex checks. Ensure that the supplied user password is encoded per divingbell documentation at https://divingbell.readthedocs.io/en/latest/#uamlite") }}
+      {{- end }}
+    {{- end }}
+    {{ $key }}={{ $value | squote }} \
   {{- end }}
   add_user
 
   {{- range $key, $value := . }}
-    {{ $key }}={{ $value | quote }} \
+    {{ $key }}={{ $value | squote }} \
   {{- end }}
-  add_sshkeys {{ range $ssh_key := .user_sshkeys }}{{ $ssh_key | quote }} {{end}}
+  {{- if hasKey . "user_sshkeys" }}
+  {{- if not (eq (first .user_sshkeys) "Unmanaged") }}
+  add_sshkeys {{ range $ssh_key := .user_sshkeys }}{{ if not (or (regexMatch "ssh-dss .*" $ssh_key) (regexMatch "ecdsa-.*" $ssh_key) (regexMatch "ssh-ed25519 .*" $ssh_key) (regexMatch "ssh-rsa .*" $ssh_key)) }}{{ fail (print "BAD SSH KEY FOR '" $item.user_name "': One of the 'user_sshkeys' specified for '" $item.user_name "' does not pass regex checks: '" $ssh_key "'. Ensure that the supplied user SSH keys are supported/formatted per divingbell documentation at https://divingbell.readthedocs.io/en/latest/#uamlite") }}{{ else }}{{ $ssh_key | squote }}{{ end }} {{ end }}
+{{- end }}
+{{- else }}
+  add_sshkeys
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}
 
-# TODO: This should be done before applying new settings rather than after
 # Expire any previously defined users that are no longer defined
 if [ -n "$(getent passwd | grep ${keyword} | cut -d':' -f1)" ]; then
   users="$(getent passwd | grep ${keyword} | cut -d':' -f1)"
@@ -163,7 +202,8 @@ fi
 if [ -n "${builtin_acct}" ] && [ -n "$(getent passwd ${builtin_acct})" ]; then
   # Disable built-in account as long as there was at least one account defined
   # in this chart with a ssh key present
-  if [ "${expire_builtin_acct}" = "true" ]; then
+  if [ "${expire_builtin_acct_passwd_vote}" = "true" ] && \
+     [ "${expire_builtin_acct_ssh_vote}" = "true" ]; then
     if [ "$(chage -l ${builtin_acct} | grep 'Account expires' | cut -d':' -f2 |
           tr -d '[:space:]')" = "never" ]; then
       usermod --expiredate 1 ${builtin_acct}

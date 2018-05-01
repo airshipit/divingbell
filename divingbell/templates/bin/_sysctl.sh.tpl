@@ -90,7 +90,7 @@ add_sysctl_param(){
 }
 
 {{- range $key, $value := .Values.conf.sysctl }}
-add_sysctl_param {{ $key | quote }} {{ $value | quote }}
+add_sysctl_param {{ $key | squote }} {{ $value | squote }}
 {{- end }}
 
 # Revert any previously applied sysctl settings which are now absent
