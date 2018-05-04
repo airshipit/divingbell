@@ -48,3 +48,9 @@ clean:
 
 .PHONY: charts
 charts: clean build-$(CHART)
+
+# TODO This needs to run the equivalent of what is in
+#      divingbell/tools/gate/setup.sh + test.sh . At present, this is
+#      being investigated on how to bring it up to date.
+.PHONY: tests
+tests: charts
