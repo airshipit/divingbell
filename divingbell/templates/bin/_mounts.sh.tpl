@@ -107,7 +107,7 @@ WantedBy=local-fs.target"
 
 {{- range .Values.conf.mounts }}
   {{- range $key, $value := . }}
-    {{ $key }}={{ $value | quote }} \
+    {{ $key }}={{ $value | squote }} \
   {{- end }}
   add_mounts_param
 {{- end }}

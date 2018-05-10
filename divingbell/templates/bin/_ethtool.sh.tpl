@@ -152,9 +152,9 @@ WantedBy=multi-user.target"
 
 {{- range $iface, $unused := .Values.conf.ethtool }}
   {{- range $ethtool_key, $ethtool_val := . }}
-    device={{ $iface | quote }} \
-    user_key={{ $ethtool_key | quote }} \
-    user_val={{ $ethtool_val | quote }} \
+    device={{ $iface | squote }} \
+    user_key={{ $ethtool_key | squote }} \
+    user_val={{ $ethtool_val | squote }} \
     add_ethtool_param
   {{- end }}
 {{- end }}
