@@ -56,7 +56,10 @@ APT_PACKAGE4=less
 APT_PACKAGE5=python-setuptools
 APT_PACKAGE6=telnetd
 EXEC_DIR=/var/${NAME}/exec
+# this used in test_overrides to check amount of daemonsets defined
+EXPECTED_NUMBER_OF_DAEMONSETS=17
 type lshw || apt -y install lshw
+type apparmor_parser || apt -y install apparmor
 nic_info="$(lshw -class network)"
 physical_nic=''
 IFS=$'\n'
@@ -109,6 +112,7 @@ clean_persistent_files(){
   sudo rm -r /var/${NAME} >& /dev/null || true
   sudo rm -r /etc/sysctl.d/60-${NAME}-* >& /dev/null || true
   sudo rm -r /etc/security/limits.d/60-${NAME}-* >& /dev/null || true
+  sudo rm -r /etc/apparmor.d/${NAME}-* >& /dev/null || true
   _teardown_systemd ${MOUNTS_PATH1} mount
   _teardown_systemd ${MOUNTS_PATH2} mount
   _teardown_systemd ${MOUNTS_PATH3} mount
@@ -1392,9 +1396,9 @@ test_overrides(){
 
   # Compare against expected number of generated daemonsets
   daemonset_count="$(echo "${tc_output}" | grep 'kind: DaemonSet' | wc -l)"
-  if [ "${daemonset_count}" != "16" ]; then
+  if [ "${daemonset_count}" != "${EXPECTED_NUMBER_OF_DAEMONSETS}" ]; then
     echo '[FAILURE] overrides test 1 failed' >> "${TEST_RESULTS}"
-    echo "Expected 15 daemonsets; got '${daemonset_count}'" >> "${TEST_RESULTS}"
+    echo "Expected ${EXPECTED_NUMBER_OF_DAEMONSETS} daemonsets; got '${daemonset_count}'" >> "${TEST_RESULTS}"
     exit 1
   else
     echo '[SUCCESS] overrides test 1 passed successfully' >> "${TEST_RESULTS}"
@@ -1566,6 +1570,167 @@ test_overrides(){
 
 }
 
+_test_apparmor_profile_added(){
+  local profile_file=$1
+  local profile_name=$2
+  local defaults_path='/var/divingbell/apparmor'
+  local persist_path='/etc/apparmor.d'
+
+  if [ ! -f "${defaults_path}/${profile_file}" ]; then
+    return 1
+  fi
+  if [ ! -L "${persist_path}/${profile_file}" ]; then
+    return 1
+  fi
+
+  profile_loaded=$(grep $profile_name /sys/kernel/security/apparmor/profiles || : )
+
+  if [ -z "$profile_loaded" ]; then
+    return 1
+  fi
+  return 0
+}
+
+_test_apparmor_profile_removed(){
+  local profile_file=$1
+  local profile_name=$2
+  local defaults_path='/var/divingbell/apparmor'
+  local persist_path='/etc/apparmor.d'
+
+  if [ -f "${defaults_path}/${profile_file}" ]; then
+    return 1
+  fi
+  if [ -L "${persist_path}/${profile_file}" ]; then
+    return 1
+  fi
+
+  profile_loaded=$(grep $profile_name /sys/kernel/security/apparmor/profiles || : )
+
+  if [ ! -z "$profile_loaded" ]; then
+    return 1
+  fi
+
+  reboot_message_present=$(grep $profile_file /var/run/reboot-required.pkgs || : )
+
+  if [ -z "$reboot_message_present" ]; then
+    return 1
+  fi
+
+  return 0
+}
+
+test_apparmor(){
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-apparmor.yaml
+
+  #Test1 - check new profile added and loaded
+  echo "conf:
+  apparmor:
+    profiles:
+      divingbell-profile-1: |
+        #include <tunables/global>
+          /usr/sbin/profile-1 {
+            #include <abstractions/apache2-common>
+            #include <abstractions/base>
+            #include <abstractions/nis>
+
+            capability dac_override,
+            capability dac_read_search,
+            capability net_bind_service,
+            capability setgid,
+            capability setuid,
+
+            /data/www/safe/* r,
+            deny /data/www/unsafe/* r,
+          }" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apparmor
+  _test_apparmor_profile_added divingbell-profile-1 profile-1
+  echo '[SUCCESS] apparmor test1 passed successfully' >> "${TEST_RESULTS}"
+
+  #Test2 - check new profile added and loaded, profile-1 still exist
+  echo "conf:
+  apparmor:
+    profiles:
+      divingbell-profile-1: |
+        #include <tunables/global>
+          /usr/sbin/profile-1 {
+            #include <abstractions/apache2-common>
+            #include <abstractions/base>
+            #include <abstractions/nis>
+
+            capability dac_override,
+            capability dac_read_search,
+            capability net_bind_service,
+            capability setgid,
+            capability setuid,
+
+            /data/www/safe/* r,
+            deny /data/www/unsafe/* r,
+          }
+      divingbell-profile-2: |
+        #include <tunables/global>
+          /usr/sbin/profile-2 {
+            #include <abstractions/apache2-common>
+            #include <abstractions/base>
+            #include <abstractions/nis>
+
+            capability dac_override,
+            capability dac_read_search,
+            capability net_bind_service,
+            capability setgid,
+            capability setuid,
+
+            /data/www/safe/* r,
+            deny /data/www/unsafe/* r,
+          }" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apparmor
+  _test_apparmor_profile_added divingbell-profile-1 profile-1
+  _test_apparmor_profile_added divingbell-profile-2 profile-2
+  echo '[SUCCESS] apparmor test2 passed successfully' >> "${TEST_RESULTS}"
+
+  #Test3 - check profile-2 removed, profile-1 still exist
+  echo "conf:
+  apparmor:
+    complain_mode: true
+    profiles:
+      divingbell-profile-1: |
+        #include <tunables/global>
+          /usr/sbin/profile-1 {
+            #include <abstractions/apache2-common>
+            #include <abstractions/base>
+            #include <abstractions/nis>
+
+            capability dac_override,
+            capability dac_read_search,
+            capability net_bind_service,
+            capability setgid,
+            capability setuid,
+
+            /data/www/safe/* r,
+            deny /data/www/unsafe/* r,
+          }" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apparmor
+  _test_apparmor_profile_added divingbell-profile-1 profile-1
+  _test_apparmor_profile_removed divingbell-profile-2 profile-2
+  echo '[SUCCESS] apparmor test3 passed successfully' >> "${TEST_RESULTS}"
+
+  #Test4 - check for bad profile input
+  echo "conf:
+  apparmor:
+    profiles:
+      divingbell-profile-3: |
+        #include <tunables/global>
+          /usr/sbin/profile-3 {
+            bad data
+          }" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apparmor expect_failure
+  _test_clog_msg 'AppArmor parser error for /etc/apparmor.d/divingbell-profile-3 in /etc/apparmor.d/divingbell-profile-3 at line 3: syntax error, unexpected TOK_ID, expecting TOK_MODE'
+  echo '[SUCCESS] apparmor test4 passed successfully' >> "${TEST_RESULTS}"
+}
+
 # initialization
 init_default_state
 
@@ -1580,6 +1745,7 @@ if [[ -z $SKIP_BASE_TESTS ]]; then
   test_uamlite
   test_apt
   test_exec
+  test_apparmor
 fi
 purge_containers
 test_overrides

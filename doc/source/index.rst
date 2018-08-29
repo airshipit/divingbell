@@ -250,8 +250,84 @@ The following set of options are not yet implemeneted::
     failing script should be retried. Failed exec count does not persist
     through pod/node restart. Default value is ``infinite``.
 
+apparmor
+^^^^^^^^
+
+Used to manage host level apparmor profiles/rules, Ex::
+
+    conf:
+      apparmor:
+        complain_mode: "true"
+        profiles:
+          profile-1: |
+            #include <tunables/global>
+              /usr/sbin/profile-1 {
+                #include <abstractions/apache2-common>
+                #include <abstractions/base>
+                #include <abstractions/nis>
+
+                capability dac_override,
+                capability dac_read_search,
+                capability net_bind_service,
+                capability setgid,
+                capability setuid,
+
+                /data/www/safe/* r,
+                deny /data/www/unsafe/* r,
+              }
+          profile-2: |
+            #include <tunables/global>
+              /usr/sbin/profile-2 {
+                #include <abstractions/apache2-common>
+                #include <abstractions/base>
+                #include <abstractions/nis>
+
+                capability dac_override,
+                capability dac_read_search,
+                capability net_bind_service,
+                capability setgid,
+                capability setuid,
+
+                /data/www/safe/* r,
+                deny /data/www/unsafe/* r,
+              }
+
 Operations
 ----------
+
+Setting apparmor profiles
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The way apparmor loading/unloading implemented is through saving
+settings to a file and than running ``apparmor_parser`` command.
+The daemonset supports both enforcement and complain mode,
+enforcement being the default. To request complain mode for the
+profiles, add ``complain_mode: "true"`` nested under apparmor entry.
+
+It's easy to mess up host with rules, if profile names would
+distinguish from file content. Ex::
+
+    conf:
+      apparmor:
+        profiles:
+          profile-1: |
+            #include <tunables/global>
+              /usr/sbin/profile-1 {
+                #include <abstractions/base>
+                capability setgid,
+              }
+          profile-2: |
+            #include <tunables/global>
+              /usr/sbin/profile-1 {
+                #include <abstractions/base>
+                capability net_bind_service,
+              }
+
+Even when profiles are different (profile-1 vs profile-2) - filenames
+are the same (profile-1), that means that only one set of rules in
+memory would be active for particular profile (either setgid or
+net_bind_service), but not both. Such problems are hard to debug, so
+caution needed while setting configs up.
 
 Setting user passwords
 ^^^^^^^^^^^^^^^^^^^^^^
