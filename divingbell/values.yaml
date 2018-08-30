@@ -76,3 +76,9 @@ pod:
       requests:
         memory: "128Mi"
         cpu: "100m"
+
+manifests:
+  daemonset_ethtool: true
+  daemonset_mounts: true
+  daemonset_uamlite: true
+  daemonset_sysctl: true

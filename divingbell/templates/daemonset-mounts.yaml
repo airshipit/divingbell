@@ -60,8 +60,10 @@ spec:
           defaultMode: 0555
   {{- end }}
 {{- end }}
+{{- if .Values.manifests.daemonset_mounts }}
 {{- $daemonset := "mounts" }}
 {{- $configMapName := "divingbell-mounts" }}
 {{- $daemonset_yaml := list $daemonset $configMapName . | include "divingbell.daemonset.mounts" | toString | fromYaml }}
 {{- $configmap_include := "divingbell.configmap.mounts" }}
 {{- list $daemonset $daemonset_yaml $configmap_include $configMapName . | include "helm-toolkit.utils.daemonset_overrides" }}
+{{- end }}
