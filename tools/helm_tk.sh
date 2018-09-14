@@ -16,7 +16,7 @@
 # Script to setup helm-toolkit and helm dep up the shipyard chart
 #
 HELM=$1
-HTK_REPO=${HTK_REPO:-"https://github.com/openstack/openstack-helm"}
+HTK_REPO=${HTK_REPO:-"https://github.com/openstack/openstack-helm-infra"}
 HTK_PATH=${HTK_PATH:-""}
 DEP_UP_LIST=${DEP_UP_LIST:-"divingbell"}
 
