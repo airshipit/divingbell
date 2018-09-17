@@ -15,7 +15,6 @@
       jobs:
         - airship-divingbell-linter
         - airship-divingbell-ubuntu:
-            voting: false
             irrelevant-files:
               - ^.*\.rst$
               - ^doc/.*$

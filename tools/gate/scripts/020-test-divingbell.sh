@@ -10,9 +10,7 @@ NAME=divingbell
 mkdir -p "${LOGS_SUBDIR}"
 LOG_NAME="${LOGS_SUBDIR}/test.log"
 TEST_RESULTS="${LOGS_SUBDIR}/results.log"
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "${DIR}"
-BASE_VALS="--values=${DIR}/../../values.yaml"
+BASE_VALS="--values=divingbell/values.yaml"
 SYSCTL_KEY1=net.ipv4.conf.all.log_martians
 SYSCTL_VAL1_DEFAULT=1
 SYSCTL_KEY2=net.ipv4.conf.all.secure_redirects
@@ -46,6 +44,7 @@ USERNAME3=userthree
 USERNAME3_SUDO=true
 USERNAME4=userfour
 USERNAME4_SUDO=false
+type lshw || apt -y install lshw
 nic_info="$(lshw -class network)"
 physical_nic=''
 IFS=$'\n'
@@ -118,9 +117,6 @@ _reset_account(){
 }
 
 init_default_state(){
-  if [ "${1}" = 'make' ]; then
-    (cd ../../../; make)
-  fi
   purge_containers
   clean_persistent_files
   # set sysctl original vals
@@ -142,15 +138,15 @@ init_default_state(){
 
 install(){
   purge_containers
-  helm install --name="${NAME}" --debug "../../../${NAME}" --namespace="${NAME}" "$@"
+  helm install --name="${NAME}" --debug "${NAME}" --namespace="${NAME}" "$@"
 }
 
 upgrade(){
-  helm upgrade --name="${NAME}" --debug "../../../${NAME}" --namespace="${NAME}" "$@"
+  helm upgrade --name="${NAME}" --debug "${NAME}" --namespace="${NAME}" "$@"
 }
 
 dry_run(){
-  helm install --name="${NAME}" --dry-run --debug "../../../${NAME}" --namespace="${NAME}" "$@"
+  helm install --name="${NAME}" --dry-run --debug "${NAME}" --namespace="${NAME}" "$@"
 }
 
 get_container_status(){
@@ -976,7 +972,7 @@ test_overrides(){
 }
 
 # initialization
-init_default_state make
+init_default_state
 
 # run tests
 install_base

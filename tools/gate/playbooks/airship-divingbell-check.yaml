@@ -16,7 +16,8 @@
   tasks:
     - name: Build Charts
       shell: |
-        set -xe;
+        set -e;
         ./tools/gate/scripts/010-build-charts.sh
+        sudo ./tools/gate/scripts/020-test-divingbell.sh
       args:
         chdir: "{{ zuul_osh_relative_path | default(zuul.project.src_dir) }}"
