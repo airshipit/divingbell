@@ -76,7 +76,7 @@ add_ethtool_param(){
   [ "$(echo "${current_val_raw}" | wc -l)" -le 1 ] ||
     die "More than one match for '${user_key}'"
   [[ ! ${current_val_raw} = *fixed* ]] ||
-    die "'${deivce}' does not permit changing the '${user_key}' setting"
+    die "'${device}' does not permit changing the '${user_key}' setting"
   if [[ ${current_val_raw} = *off\ \[requested\ on\] ]]; then
     current_val_raw='off'
   elif [[ ${current_val_raw} = *on\ \[requested\ off\] ]]; then
