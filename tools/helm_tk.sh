@@ -53,7 +53,7 @@ function helm_serve {
 mkdir -p build
 pushd build
 git clone --depth 1 $HTK_REPO || true
-pushd openstack-helm/$HTK_PATH
+pushd ${HTK_REPO##*/}/$HTK_PATH
 
 git pull
 make helm-toolkit

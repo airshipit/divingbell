@@ -1,3 +1,3 @@
 # Divingbell
 
-Documentation can be found [here](https://divingbell.readthedocs.io).
+Documentation can be found [here](https://airship-divingbell.readthedocs.io).

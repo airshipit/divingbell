@@ -143,7 +143,7 @@ purge_expired_users={{ .Values.conf.uamlite.purge_expired_users | squote }}
     {{- if eq $key "user_crypt_passwd" }}
       {{/* supported crypt types are 2a (blowfish), 1 (md5), 5 (sha-256), and 6 (sha-512) */}}
       {{- if not (or (regexMatch "\\$2a\\$.*\\$.*" $value) (regexMatch "\\$[156]\\$.*\\$.*" $value)) }}
-        {{- fail (print "BAD PASSWORD FOR '" $item.user_name "': The 'user_crypt_passwd' specified for '" $item.user_name "' does not pass regex checks. Ensure that the supplied user password is encoded per divingbell documentation at https://divingbell.readthedocs.io/en/latest/#uamlite") }}
+        {{- fail (print "BAD PASSWORD FOR '" $item.user_name "': The 'user_crypt_passwd' specified for '" $item.user_name "' does not pass regex checks. Ensure that the supplied user password is encoded per divingbell documentation at https://airship-divingbell.readthedocs.io/#uamlite") }}
       {{- end }}
     {{- end }}
     {{ $key }}={{ $value | squote }} \
@@ -155,7 +155,7 @@ purge_expired_users={{ .Values.conf.uamlite.purge_expired_users | squote }}
   {{- end }}
   {{- if hasKey . "user_sshkeys" }}
   {{- if not (eq (first .user_sshkeys) "Unmanaged") }}
-  add_sshkeys {{ range $ssh_key := .user_sshkeys }}{{ if not (or (regexMatch "ssh-dss .*" $ssh_key) (regexMatch "ecdsa-.*" $ssh_key) (regexMatch "ssh-ed25519 .*" $ssh_key) (regexMatch "ssh-rsa .*" $ssh_key)) }}{{ fail (print "BAD SSH KEY FOR '" $item.user_name "': One of the 'user_sshkeys' specified for '" $item.user_name "' does not pass regex checks: '" $ssh_key "'. Ensure that the supplied user SSH keys are supported/formatted per divingbell documentation at https://divingbell.readthedocs.io/en/latest/#uamlite") }}{{ else }}{{ $ssh_key | squote }}{{ end }} {{ end }}
+  add_sshkeys {{ range $ssh_key := .user_sshkeys }}{{ if not (or (regexMatch "ssh-dss .*" $ssh_key) (regexMatch "ecdsa-.*" $ssh_key) (regexMatch "ssh-ed25519 .*" $ssh_key) (regexMatch "ssh-rsa .*" $ssh_key)) }}{{ fail (print "BAD SSH KEY FOR '" $item.user_name "': One of the 'user_sshkeys' specified for '" $item.user_name "' does not pass regex checks: '" $ssh_key "'. Ensure that the supplied user SSH keys are supported/formatted per divingbell documentation at https://airship-divingbell.readthedocs.io/#uamlite") }}{{ else }}{{ $ssh_key | squote }}{{ end }} {{ end }}
 {{- end }}
 {{- else }}
   add_sshkeys
