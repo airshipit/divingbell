@@ -26,10 +26,13 @@ MOUNTS_PATH3=${MOUNTS_SYSTEMD}3
 ETHTOOL_KEY2=tx-tcp-segmentation
 ETHTOOL_VAL2_DEFAULT=on
 ETHTOOL_KEY3=tx-tcp6-segmentation
+# Not all NIC hardware has enough ethtool tunables available
+ETHTOOL_KEY3_BACKUP=''
 ETHTOOL_VAL3_DEFAULT=on
 ETHTOOL_KEY4=tx-nocache-copy
 ETHTOOL_VAL4_DEFAULT=off
 ETHTOOL_KEY5=tx-checksum-ip-generic
+ETHTOOL_KEY5_BACKUP=tx-scatter-gather
 ETHTOOL_VAL5_DEFAULT=on
 USERNAME1=userone
 USERNAME1_SUDO=true
@@ -59,6 +62,13 @@ for line in ${nic_info}; do
   fi
 done
 [ -n "${DEVICE}" ] || (echo Could not find physical NIC for tesing; exit 1)
+# Not all hardware has the same NIC tunables to use for testing
+if [[ $(/sbin/ethtool -k "${DEVICE}" | grep "${ETHTOOL_KEY3}:") =~ .*fixed.* ]]; then
+  ETHTOOL_KEY3="${ETHTOOL_KEY3_BACKUP}"
+fi
+if [[ $(/sbin/ethtool -k "${DEVICE}" | grep "${ETHTOOL_KEY5}:") =~ .*fixed.* ]]; then
+  ETHTOOL_KEY5="${ETHTOOL_KEY5_BACKUP}"
+fi
 
 exec >& >(while read line; do echo "${line}" | sudo tee -a ${LOG_NAME}; done)
 
@@ -101,6 +111,9 @@ _write_sysctl(){
 
 _write_ethtool(){
   local cur_val
+  if [ -z "${2}" ]; then
+    return
+  fi
   cur_val="$(/sbin/ethtool -k ${1} |
              grep "${2}:" | cut -d':' -f2 | cut -d' ' -f2)"
   if [ "${cur_val}" != "${3}" ]; then
@@ -126,7 +139,7 @@ init_default_state(){
   _write_sysctl ${SYSCTL_KEY4} ${SYSCTL_VAL4_DEFAULT}
   # set ethtool original vals
   _write_ethtool ${DEVICE} ${ETHTOOL_KEY2} ${ETHTOOL_VAL2_DEFAULT}
-  _write_ethtool ${DEVICE} ${ETHTOOL_KEY3} ${ETHTOOL_VAL3_DEFAULT}
+  _write_ethtool ${DEVICE} "${ETHTOOL_KEY3}" ${ETHTOOL_VAL3_DEFAULT}
   _write_ethtool ${DEVICE} ${ETHTOOL_KEY4} ${ETHTOOL_VAL4_DEFAULT}
   _write_ethtool ${DEVICE} ${ETHTOOL_KEY5} ${ETHTOOL_VAL5_DEFAULT}
   # Remove any created accounts, SSH keys
@@ -403,6 +416,9 @@ test_mounts(){
 }
 
 _test_ethtool_value(){
+  if [ -z "${1}" ]; then
+    return
+  fi
   test "$(/sbin/ethtool -k ${DEVICE} |
           grep "${1}:" | cut -d':' -f2 | tr -d '[:space:]')" = "${2}"
 }
@@ -412,17 +428,18 @@ test_ethtool(){
   local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
   local val2=on
   local val3=off
+  [ -n "${ETHTOOL_KEY3}" ] && local line2_1="${ETHTOOL_KEY3}: $val3"
   local val4=off
   echo "conf:
   ethtool:
     ${DEVICE}:
       $ETHTOOL_KEY2: $val2
-      $ETHTOOL_KEY3: $val3
+      $line2_1
       $ETHTOOL_KEY4: $val4" > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
   get_container_status ethtool
   _test_ethtool_value $ETHTOOL_KEY2 $val2
-  _test_ethtool_value $ETHTOOL_KEY3 $val3
+  _test_ethtool_value "$ETHTOOL_KEY3" $val3
   _test_ethtool_value $ETHTOOL_KEY4 $val4
   echo '[SUCCESS] ethtool test1 passed successfully' >> "${TEST_RESULTS}"
 
@@ -430,17 +447,18 @@ test_ethtool(){
   overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set2.yaml
   val2=off
   val3=on
+  [ -n "${ETHTOOL_KEY3}" ] && local line2_2="${ETHTOOL_KEY3}: $val3"
   val4=on
   echo "conf:
   ethtool:
     ${DEVICE}:
       $ETHTOOL_KEY2: $val2
-      $ETHTOOL_KEY3: $val3
+      $line2_2
       $ETHTOOL_KEY4: $val4" > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
   get_container_status ethtool
   _test_ethtool_value $ETHTOOL_KEY2 $val2
-  _test_ethtool_value $ETHTOOL_KEY3 $val3
+  _test_ethtool_value "$ETHTOOL_KEY3" $val3
   _test_ethtool_value $ETHTOOL_KEY4 $val4
   echo '[SUCCESS] ethtool test2 passed successfully' >> "${TEST_RESULTS}"
 
@@ -448,7 +466,7 @@ test_ethtool(){
   install_base
   get_container_status ethtool
   _test_ethtool_value $ETHTOOL_KEY2 $ETHTOOL_VAL2_DEFAULT
-  _test_ethtool_value $ETHTOOL_KEY3 $ETHTOOL_VAL3_DEFAULT
+  _test_ethtool_value "$ETHTOOL_KEY3" $ETHTOOL_VAL3_DEFAULT
   _test_ethtool_value $ETHTOOL_KEY4 $ETHTOOL_VAL4_DEFAULT
   echo '[SUCCESS] ethtool test3 passed successfully' >> "${TEST_RESULTS}"
 
