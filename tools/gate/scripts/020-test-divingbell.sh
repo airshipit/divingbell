@@ -164,11 +164,11 @@ dry_run(){
 
 get_container_status(){
   local deployment="${1}"
-  container="$(kubectl get pods --namespace="${NAME}" | grep ${NAME}-${deployment} | cut -d' ' -f1)"
-  local log_connect_timeout=30
+  local log_connect_timeout=60
   local log_connect_sleep_interval=2
   local wait_time=0
   while : ; do
+    container="$(kubectl get pods --namespace="${NAME}" | grep ${NAME}-${deployment} | grep -v Terminating | cut -d' ' -f1)"
     kubectl logs "${container}" --namespace="${NAME}" > /dev/null && break || \
       echo "Waiting for container logs..." && \
       wait_time=$((${wait_time} + ${log_connect_sleep_interval})) && \
@@ -1005,4 +1005,3 @@ test_overrides
 init_default_state
 
 echo "All tests pass for ${NAME}"
-
