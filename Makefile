@@ -43,6 +43,7 @@ clean:
 	rm -rf helm-toolkit/secrets/*.b64
 	rm -rf */templates/_partials.tpl
 	rm -rf */templates/_globals.tpl
+	rm -rf doc/build
 
 .PHONY: $(EXCLUDES) $(CHARTS)
 
@@ -54,3 +55,10 @@ charts: clean build-$(CHART)
 #      being investigated on how to bring it up to date.
 .PHONY: tests
 tests: charts
+
+.PHONY: docs
+docs: clean build_docs
+
+.PHONY: build_docs
+build_docs:
+	tox -e docs

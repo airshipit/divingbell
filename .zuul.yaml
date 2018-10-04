@@ -11,6 +11,10 @@
 # limitations under the License.
 
 - project:
+    templates:
+      - docs-on-readthedocs
+    vars:
+      rtd_webhook_id: '47940'
     check:
       jobs:
         - airship-divingbell-linter
@@ -28,7 +32,6 @@
         #       - ^.*\.rst$
         #       - ^doc/.*$
         #       - ^releasenotes/.*$
-
 - job:
     name: airship-divingbell-linter
     run: tools/gate/playbooks/zuul-linter.yaml
