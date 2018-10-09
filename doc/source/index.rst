@@ -18,6 +18,7 @@ Divingbell
 ==========
 
 Divingbell is a lightweight solution for:
+
 1. Bare metal configuration management for a few very targeted use cases
 2. Bare metal package manager orchestration
 
@@ -25,6 +26,7 @@ What problems does it solve?
 ----------------------------
 
 The needs identified for Divingbell were:
+
 1. To plug gaps in day 1 tools (e.g., Drydock) for node configuration
 2. To provide a day 2 solution for managing these configurations going forward
 3. [Future] To provide a day 2 solution for system level host patching
@@ -122,8 +124,11 @@ access. Ex::
           - ssh-rsa AAAAB3N... key1-comment
           - ssh-rsa AAAAVY6... key2-comment
 
+Operations
+----------
+
 Setting user passwords
-""""""""""""""""""""""
+^^^^^^^^^^^^^^^^^^^^^^
 
 Including ``user_crypt_passwd`` to set a user password is optional.
 
@@ -145,7 +150,7 @@ network access is unavailable, console username/password access will be the only
 login option.
 
 Setting user sudo
-"""""""""""""""""
+^^^^^^^^^^^^^^^^^
 
 Including ``user_sudo`` to set user sudo access is optional. The default value
 is ``false``.
@@ -154,7 +159,7 @@ At least one user must be defined with sudo access in order for the built-in
 ``ubuntu`` account to be disabled.
 
 SSH keys
-""""""""
+^^^^^^^^
 
 Including ``user_sshkeys`` for defining one or more user SSH keys is optional.
 
@@ -173,7 +178,7 @@ At least one user must be defined with an SSH key and sudo in order for the
 built-in ``ubuntu`` account to be disabled.
 
 Purging expired users
-"""""""""""""""""""""
+^^^^^^^^^^^^^^^^^^^^^
 
 Including the ``purge_expired_users`` key-value pair is optional. The default
 value is ``false``.
@@ -238,19 +243,20 @@ Overrides example with sysctl daemonset::
                 fs.file-max: 23456
 
 Caveats:
-1. For a given node, at most one override operation applies. If a node meets
-override criteria for both a label and a host, then the host overrides take
-precedence and are used for that node. The label overrides are not used in this
-case. This is especially important to note if you are defining new host
-overrides for a node that is already consuming matching label overrides, as
-defining a host override would make those label overrides no longer apply.
-2. In the event of label conflicts, the last applicable label override defined
-takes precedence. In this example, overrides defined for "another_label" would
-take precedence and be applied to nodes that contained both of the defined
-labels.
+
+1. For a given node, at most one override operation applies. If a node
+   meets override criteria for both a label and a host, then the host
+   overrides take precedence and are used for that node. The label
+   overrides are not used in this case. This is especially important
+   to note if you are defining new host overrides for a node that is
+   already consuming matching label overrides, as defining a host
+   override would make those label overrides no longer apply.
+2. In the event of label conflicts, the last applicable label override
+   defined takes precedence. In this example, overrides defined for
+   "another_label" would take precedence and be applied to nodes that
+   contained both of the defined labels.
 
 Recorded Demo
 -------------
 
 A recorded demo of using Divingbell can be found `here <https://asciinema.org/a/beJQZpRPdOctowW0Lxkxrhz17>`_.
-
