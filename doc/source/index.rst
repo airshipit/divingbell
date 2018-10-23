@@ -49,7 +49,8 @@ In order to keep configuration as isolated as possible from other systems that
 manage common files like /etc/fstab and /etc/sysctl.conf, Divingbell daemonsets
 manage all of their configuration in separate files (e.g. by writing unique
 files to /etc/sysctl.d or defining unique Systemd units) to avoid potential
-conflicts.
+conflicts. Another example is limit management, Divingbell daemonset writes
+separate files to /etc/security/limits.d.
 
 To maximize robustness and utility, the daemonsets in this chart are made to be
 idempotent. In addition, they are designed to implicitly restore the original
@@ -77,6 +78,27 @@ Used to manage host level sysctl tunables. Ex::
       sysctl:
         net/ipv4/ip_forward: 1
         net/ipv6/conf/all/forwarding: 1
+
+limits
+^^^^^^
+
+Used to manage host level limits. Ex::
+
+  conf:
+    limits:
+      nofile:
+        domain: 'root'
+        type: 'soft'
+        item: 'nofile'
+        value: '101'
+      core_dump:
+        domain: '0:'
+        type: 'hard'
+        item: 'core'
+        value: 0
+
+Previous values of newly set limits are backed up to /var/divingbell/limits
+
 
 mounts
 ^^^^^^
@@ -255,6 +277,18 @@ Caveats:
    defined takes precedence. In this example, overrides defined for
    "another_label" would take precedence and be applied to nodes that
    contained both of the defined labels.
+
+Dev Environment with Vagrant
+----------------------------
+The point of Dev env to prepare working environment for development.
+
+Vagrantfile allows to run on working copy with modifications
+e.g. to 020-test script. The approach is to setup Gate test
+but do not delete the pods and other stuff. You have:
+
+1. test run of previous tests and their results
+2. your changes from working tree are applied smoothly
+3. your not committed test runs in prepared env
 
 Recorded Demo
 -------------

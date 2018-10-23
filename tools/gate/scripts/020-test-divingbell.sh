@@ -57,7 +57,7 @@ for line in ${nic_info}; do
   fi
   if [ "${physical_nic}" = 'true' ] && [[ ${line} = *'logical name'* ]]; then
     DEVICE="$(echo "${line}" | cut -d':' -f2 | tr -d '[:space:]')"
-    echo "Found deivce: '${DEVICE}' to use for ethtool testing"
+    echo "Found device: '${DEVICE}' to use for ethtool testing"
     break
   fi
 done
@@ -99,6 +99,7 @@ _teardown_systemd(){
 clean_persistent_files(){
   sudo rm -r /var/${NAME} >& /dev/null || true
   sudo rm -r /etc/sysctl.d/60-${NAME}-* >& /dev/null || true
+  sudo rm -r /etc/security/limits.d/60-${NAME}-* >& /dev/null || true
   _teardown_systemd ${MOUNTS_PATH1} mount
   _teardown_systemd ${MOUNTS_PATH2} mount
   _teardown_systemd ${MOUNTS_PATH3} mount
@@ -310,6 +311,38 @@ test_sysctl(){
   get_container_status sysctl
   _test_clog_msg 'sysctl: setting key "net.ipv4.conf.all.log_martians": Invalid argument'
   echo '[SUCCESS] sysctl test5 passed successfully' >> "${TEST_RESULTS}"
+}
+
+_test_limits_value(){
+  local limit=${1}
+  local domain=${2}
+  local type=${3}
+  local item=${4}
+  local value=${5}
+  test "$(cat /etc/security/limits.d/60-${NAME}-${limit}.conf)" = \
+    "$domain $type $item $value"
+}
+
+test_limits(){
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}.yaml
+  echo "conf:
+  limits:
+    limit1:
+      domain: root
+      type: hard
+      item: core
+      value: 0
+    limit2:
+      domain: '0:'
+      type: soft
+      item: nofile
+      value: 101" > "${overrides_yaml}"
+  echo $(cat ${overrides_yaml})
+  install_base "--values=${overrides_yaml}"
+  get_container_status limits
+  _test_limits_value limit1 root hard core 0
+  _test_limits_value limit2 '0:' soft nofile 101
+  echo "[SUCCESS] test range loop for limits passed successfully" >> "${TEST_RESULTS}"
 }
 
 _test_if_mounted_positive(){
@@ -815,9 +848,9 @@ test_overrides(){
 
   # Compare against expected number of generated daemonsets
   daemonset_count="$(echo "${tc_output}" | grep 'kind: DaemonSet' | wc -l)"
-  if [ "${daemonset_count}" != "12" ]; then
+  if [ "${daemonset_count}" != "13" ]; then
     echo '[FAILURE] overrides test 1 failed' >> "${TEST_RESULTS}"
-    echo "Expected 12 daemonsets; got '${daemonset_count}'" >> "${TEST_RESULTS}"
+    echo "Expected 13 daemonsets; got '${daemonset_count}'" >> "${TEST_RESULTS}"
     exit 1
   else
     echo '[SUCCESS] overrides test 1 passed successfully' >> "${TEST_RESULTS}"
@@ -995,13 +1028,14 @@ init_default_state
 # run tests
 install_base
 test_sysctl
+test_limits
 test_mounts
 test_ethtool
 test_uamlite
 purge_containers
 test_overrides
 
-# retore initial state
+# restore initial state
 init_default_state
 
 echo "All tests pass for ${NAME}"

@@ -120,7 +120,7 @@ fi
 if [ -n "${curr_settings}" ]; then
   log.INFO 'All sysctl configuration successfully validated on this node.'
 else
-  log.WARN 'No syctl overrides defined for this node.'
+  log.WARN 'No sysctl overrides defined for this node.'
 fi
 
 exit 0
