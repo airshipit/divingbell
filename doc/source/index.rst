@@ -124,11 +124,6 @@ Used to manage host level NIC tunables. Ex::
           tx-tcp-segmentation: off
           tx-checksum-ip-generic: on
 
-packages
-^^^^^^^^
-
-Not implemented
-
 uamlite
 ^^^^^^^
 
@@ -145,6 +140,23 @@ access. Ex::
           user_sshkeys:
           - ssh-rsa AAAAB3N... key1-comment
           - ssh-rsa AAAAVY6... key2-comment
+
+apt
+^^^
+
+``apt`` daemonset does package management. It is able to install a package of
+a specific version (or upgrade an existing one to requested version). Version
+is optional, and if not provided the latest available package is installed.
+It can also remove packages that were previously installed by divingbell (it is
+done by excluding the packages you want to remove from the configuration).
+Here is an example configuration for it::
+
+    conf:
+      apt:
+        packages:
+        - name: <PACKAGE1>
+          version: <VERSION1>
+        - name: <PACKAGE2>
 
 Operations
 ----------

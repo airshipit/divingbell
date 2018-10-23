@@ -61,6 +61,10 @@ pod:
           enabled: true
           min_ready_seconds: 0
           max_unavailable: 100%
+        apt:
+          enabled: true
+          min_ready_seconds: 0
+          max_unavailable: 100%
         limits:
           enabled: true
           min_ready_seconds: 0
@@ -102,6 +106,13 @@ pod:
       requests:
         memory: "128Mi"
         cpu: "100m"
+    apt:
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
 
 manifests:
   daemonset_ethtool: true
@@ -109,3 +120,4 @@ manifests:
   daemonset_uamlite: true
   daemonset_sysctl: true
   daemonset_limits: true
+  daemonset_apt: true

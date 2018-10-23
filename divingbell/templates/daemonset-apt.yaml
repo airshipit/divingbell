@@ -1,0 +1,69 @@
+{{/*
+# Copyright 2017 AT&T Intellectual Property.  All other rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+{{- define "divingbell.daemonset.apt" }}
+  {{- $daemonset := index . 0 }}
+  {{- $secretName := index . 1 }}
+  {{- $envAll := index . 2 }}
+  {{- with $envAll }}
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: {{ $daemonset }}
+spec:
+{{ tuple $envAll $daemonset | include "helm-toolkit.snippets.kubernetes_upgrades_daemonset" | indent 2 }}
+  template:
+    metadata:
+      labels:
+{{ list $envAll .Chart.Name $daemonset | include "helm-toolkit.snippets.kubernetes_metadata_labels" | indent 8 }}
+    spec:
+      hostNetwork: true
+      hostPID: true
+      hostIPC: true
+      containers:
+      - name: {{ $daemonset }}
+        image: {{ .Values.images.divingbell }}
+        imagePullPolicy: {{ .Values.images.pull_policy }}
+{{ tuple $envAll $envAll.Values.pod.resources.apt | include "helm-toolkit.snippets.kubernetes_resources" | indent 8 }}
+        command:
+        - /tmp/{{ $daemonset }}.sh
+        volumeMounts:
+        - name: rootfs-{{ $daemonset }}
+          mountPath: {{ .Values.conf.chroot_mnt_path }}
+        - name: {{ $secretName }}
+          mountPath: /tmp/{{ $daemonset }}.sh
+          subPath: {{ $daemonset }}
+          readOnly: true
+        securityContext:
+          privileged: true
+      volumes:
+      - name: rootfs-{{ $daemonset }}
+        hostPath:
+          path: /
+      - name: {{ $secretName }}
+        secret:
+          secretName: {{ $secretName }}
+          defaultMode: 0555
+  {{- end }}
+{{- end }}
+{{- if .Values.manifests.daemonset_apt }}
+{{- $daemonset := "apt" }}
+{{- $secretName := "divingbell-apt" }}
+{{- $daemonset_yaml := list $daemonset $secretName . | include "divingbell.daemonset.apt" | toString | fromYaml }}
+{{- $secret_include := "divingbell.secret.apt" }}
+{{- list $daemonset $daemonset_yaml $secret_include $secretName . | include "helm-toolkit.utils.daemonset_overrides" }}
+{{- end }}
