@@ -96,6 +96,19 @@ if [ ! -z "$INSTALLED_THIS_TIME" ]; then
     sort ${persist_path}/packages -o ${persist_path}/packages
 fi
 
+######################################################
+#Stage 4
+#Remove blacklisted packages in conf.apt.blacklistpkgs
+######################################################
+
+{{- if hasKey .Values.conf.apt "blacklistpkgs" }}
+{{- range .Values.conf.apt.blacklistpkgs }}
+  {{- $package := . }}
+  apt-get remove --autoremove -y {{ $package | squote }}
+{{- end }}
+apt-get autoremove -y
+{{- end }}
+
 exit 0
 EOF
 
