@@ -31,6 +31,47 @@ conf:
     - telnetd-ssl
     - nis
     - ntpdate
+#  perm:
+#    -
+#      path: '/boot/System.map-*'
+#      owner: 'root'
+#      group: 'root'
+#      permissions: '0640'
+#    -
+#      path: '/etc/shadow'
+#      owner: 'root'
+#      group: 'shadow'
+#      permissions: '0640'
+#    -
+#      path: '/etc/gshadow'
+#      owner: 'root'
+#      group: 'shadow'
+#      permissions: '0640'
+#    -
+#      path: '/etc/passwd'
+#      owner: 'root'
+#      group: 'root'
+#      permissions: '0644'
+#    -
+#      path: '/etc/group'
+#      owner: 'root'
+#      group: 'root'
+#      permissions: '0644'
+#    -
+#      path: '/var/log/kern.log'
+#      owner: 'syslog'
+#      group: 'adm'
+#      permissions: '0640'
+#    -
+#      path: '/var/log/auth.log'
+#      owner: 'syslog'
+#      group: 'adm'
+#      permissions: '0640'
+#    -
+#      path: '/var/log/syslog'
+#      owner: 'syslog'
+#      group: 'adm'
+#      permissions: '0640'
 
 ##  data.values.conf.sysctl
 #  sysctl:
@@ -76,6 +117,10 @@ pod:
           enabled: true
           min_ready_seconds: 0
           max_unavailable: 100%
+        perm:
+          enabled: true
+          min_ready_seconds: 0
+          max_unavailable: 100%
   resources:
     enabled: false
     ethtool:
@@ -113,6 +158,13 @@ pod:
       requests:
         memory: "128Mi"
         cpu: "100m"
+    perm:
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
     apt:
       limits:
         memory: "128Mi"
@@ -128,3 +180,4 @@ manifests:
   daemonset_sysctl: true
   daemonset_limits: true
   daemonset_apt: true
+  daemonset_perm: true

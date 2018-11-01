@@ -353,6 +353,88 @@ test_limits(){
   echo "[SUCCESS] test range loop for limits passed successfully" >> "${TEST_RESULTS}"
 }
 
+_test_perm_value(){
+  local file=${1}
+  local owner=${2}
+  local group=${3}
+  local perm=${4}
+  local r_owner="$(stat -c %U ${file})"
+  local r_group="$(stat -c %G ${file})"
+  local r_perm="$(stat -c %a ${file})"
+  [ "${perm}"=="${r_perm}" ] && echo "+" || (echo "File ${file} permissions ${r_perm} but expected ${perm}"; exit 1)
+  [ "${owner}"=="${r_owner}" ] && echo "+" || (echo "File ${file} owner ${r_owner} but expected ${owner}"; exit 1)
+  [ "${group}"=="${r_group}" ] && echo "+" || (echo "File ${file} group ${r_group} but expected ${group}"; exit 1)
+}
+
+_perm_init_one(){
+  local file=${1}
+  local user=${file##*.}
+  useradd ${user} -U
+  chmod 777 ${file}
+  chown ${user}:${user} ${file}
+  echo ${file}
+}
+
+_make_p_temp(){
+  echo $(mktemp "${TMPDIR:-/tmp}/${0##*/}.XXXXXX")
+}
+
+_perm_init(){
+  # global vars!
+  p_test_file1=$(_perm_init_one $(_make_p_temp))
+  p_test_file2=$(_perm_init_one $(_make_p_temp))
+}
+
+_perm_teardown_one(){
+  local file=${1}
+  local user=${file##*.}
+  deluser ${user} -q
+  rm -f ${file}
+}
+
+_perm_teardown(){
+  # global vars!
+  _perm_teardown_one ${p_test_file1}
+  unset p_test_file1
+  _perm_teardown_one ${p_test_file2}
+  unset p_test_file2
+}
+
+test_perm(){
+  _perm_init
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}.yaml
+  echo "conf:
+  perm:
+    -
+      path: ${p_test_file1}
+      owner: 'root'
+      group: 'shadow'
+      permissions: '0640'
+    -
+      path: ${p_test_file2}
+      owner: 'root'
+      group: 'shadow'
+      permissions: '0640'" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status perm
+  _test_perm_value ${p_test_file1} root shadow 640
+  _test_perm_value ${p_test_file2} root shadow 640
+  echo "[SUCCESS] Positive test for perm passed successfully" >> "${TEST_RESULTS}"
+  echo "conf:
+  perm:
+    -
+      path: ${p_test_file1}
+      owner: 'root'
+      group: 'shadow'
+      permissions: '0640'" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status perm
+  _test_perm_value ${p_test_file1} root shadow 640
+  _test_perm_value ${p_test_file2} ${p_test_file2##*.} ${p_test_file2##*.} 777
+  echo "[SUCCESS] Backup test for perm passed successfully" >> "${TEST_RESULTS}"
+  _perm_teardown
+}
+
 _test_if_mounted_positive(){
   mountpoint "${1}" || (echo "Expect ${1} to be mounted, but was not"; exit 1)
   df -h | grep "${1}" | grep "${2}" ||
@@ -971,9 +1053,9 @@ test_overrides(){
 
   # Compare against expected number of generated daemonsets
   daemonset_count="$(echo "${tc_output}" | grep 'kind: DaemonSet' | wc -l)"
-  if [ "${daemonset_count}" != "14" ]; then
+  if [ "${daemonset_count}" != "15" ]; then
     echo '[FAILURE] overrides test 1 failed' >> "${TEST_RESULTS}"
-    echo "Expected 14 daemonsets; got '${daemonset_count}'" >> "${TEST_RESULTS}"
+    echo "Expected 15 daemonsets; got '${daemonset_count}'" >> "${TEST_RESULTS}"
     exit 1
   else
     echo '[SUCCESS] overrides test 1 passed successfully' >> "${TEST_RESULTS}"
@@ -1153,6 +1235,7 @@ if [[ -z $SKIP_BASE_TESTS ]]; then
   install_base
   test_sysctl
   test_limits
+  test_perm
   test_mounts
   test_ethtool
   test_uamlite
