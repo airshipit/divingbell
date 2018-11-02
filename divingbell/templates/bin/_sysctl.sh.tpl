@@ -103,10 +103,10 @@ if [ -n "${prev_files}" ]; then
   for orig_sysctl_setting in ${revert_list}; do
     rm "${persist_path}/${orig_sysctl_setting}"
     sysctl -p "${defaults_path}/${orig_sysctl_setting}"
-    rm "${defaults_path}/${orig_sysctl_setting}"
-    reload_system_configs=true
     log.INFO "Reverted sysctl setting:" \
              "$(cat "${defaults_path}/${orig_sysctl_setting}")"
+    rm "${defaults_path}/${orig_sysctl_setting}"
+    reload_system_configs=true
   done
 fi
 

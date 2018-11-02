@@ -57,7 +57,7 @@ add_limits_param(){
     log.INFO "No changes made to limits param: ${limit}"
   fi
 
-  curr_settings="${curr_settings}${file_name}"$'\n'
+  curr_limits="${curr_limits}${file_name}"$'\n'
 }
 
 {{- range $index, $limit := .Values.conf.limits }}
@@ -68,9 +68,9 @@ add_limits_param {{ $index | squote }} {{ $limit.domain | squote }} {{ $limit.ty
 # Revert any previously applied limits settings which are now absent
 prev_files="$(find "${persist_path}" -type f)"
 if [ -n "${prev_files}" ]; then
-  basename -a ${prev_files} | sort > /tmp/prev_settings
-  echo "${curr_settings}" | sort > /tmp/curr_settings
-  revert_list="$(comm -23 /tmp/prev_settings /tmp/curr_settings)"
+  basename -a ${prev_files} | sort > /tmp/prev_limits
+  echo "${curr_limits}" | sort > /tmp/curr_limits
+  revert_list="$(comm -23 /tmp/prev_limits /tmp/curr_limits)"
   IFS=$'\n'
   for orig_limits_setting in ${revert_list}; do
     rm "${persist_path}/${orig_limits_setting}"
@@ -87,7 +87,7 @@ su -c "prlimit --noheadings --output RESOURCE,SOFT,HARD"
 # For this test it's just test bash process.
 # For production case it's limits_host.sh run by DivingBell pod which is in sleep mode.
 
-if [ -n "${curr_settings}" ]; then
+if [ -n "${curr_limits}" ]; then
   log.INFO 'All limits configuration successfully validated on this node.'
 else
   log.WARN 'No limits overrides defined for this node.'
