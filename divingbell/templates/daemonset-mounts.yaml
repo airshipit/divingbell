@@ -16,7 +16,7 @@
 
 {{- define "divingbell.daemonset.mounts" }}
   {{- $daemonset := index . 0 }}
-  {{- $configMapName := index . 1 }}
+  {{- $secretName := index . 1 }}
   {{- $envAll := index . 2 }}
   {{- with $envAll }}
 ---
@@ -46,7 +46,7 @@ spec:
         volumeMounts:
         - name: rootfs-{{ $daemonset }}
           mountPath: {{ .Values.conf.chroot_mnt_path }}
-        - name: {{ $configMapName }}
+        - name: {{ $secretName }}
           mountPath: /tmp/{{ $daemonset }}.sh
           subPath: {{ $daemonset }}
           readOnly: true
@@ -56,16 +56,16 @@ spec:
       - name: rootfs-{{ $daemonset }}
         hostPath:
           path: /
-      - name: {{ $configMapName }}
-        configMap:
-          name: {{ $configMapName }}
+      - name: {{ $secretName }}
+        secret:
+          secretName: {{ $secretName }}
           defaultMode: 0555
   {{- end }}
 {{- end }}
 {{- if .Values.manifests.daemonset_mounts }}
 {{- $daemonset := "mounts" }}
-{{- $configMapName := "divingbell-mounts" }}
-{{- $daemonset_yaml := list $daemonset $configMapName . | include "divingbell.daemonset.mounts" | toString | fromYaml }}
-{{- $configmap_include := "divingbell.configmap.mounts" }}
-{{- list $daemonset $daemonset_yaml $configmap_include $configMapName . | include "helm-toolkit.utils.daemonset_overrides" }}
+{{- $secretName := "divingbell-mounts" }}
+{{- $daemonset_yaml := list $daemonset $secretName . | include "divingbell.daemonset.mounts" | toString | fromYaml }}
+{{- $secret_include := "divingbell.secret.mounts" }}
+{{- list $daemonset $daemonset_yaml $secret_include $secretName . | include "helm-toolkit.utils.daemonset_overrides" }}
 {{- end }}
