@@ -47,6 +47,13 @@ USERNAME3=userthree
 USERNAME3_SUDO=true
 USERNAME4=userfour
 USERNAME4_SUDO=false
+APT_PACKAGE1=python-pbr
+APT_VERSION1=1.8.0-4ubuntu1
+APT_PACKAGE2=python-yaml
+APT_PACKAGE3=python-simplejson
+APT_VERSION3=3.8.1-1ubuntu2
+APT_PACKAGE4=less
+APT_PACKAGE5=python-setuptools
 type lshw || apt -y install lshw
 nic_info="$(lshw -class network)"
 physical_nic=''
@@ -753,6 +760,94 @@ test_uamlite(){
   echo '[SUCCESS] uamlite test6 passed successfully' >> "${TEST_RESULTS}"
 }
 
+_test_apt_package_version(){
+  local pkg_name=$1
+  local pkg_ver=$2
+  if [ ${pkg_ver} = "none" ]; then
+    if [[ $(dpkg -l | grep ${pkg_name}) ]]; then
+      echo "[FAIL] Package ${pkg_name} should not be installed" >> "${TEST_RESULTS}"
+      return 1
+    fi
+  elif [ ${pkg_ver} = "any" ]; then
+    if [[ ! $(dpkg -l | grep ${pkg_name}) ]]; then
+      echo "[FAIL] Package ${pkg_name} should be installed" >> "${TEST_RESULTS}"
+      return 1
+    fi
+  else
+    if [ $(dpkg -l | awk "/[[:space:]]${pkg_name}[[:space:]]/"'{print $3}') != "${pkg_ver}" ]; then
+      echo "[FAIL] Package ${pkg_name} should be of version ${pkg_ver}" >> "${TEST_RESULTS}"
+      return 1
+    fi
+  fi
+}
+
+test_apt(){
+  # Test the valid set of packages
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
+  echo "conf:
+  apt:
+    packages:
+    - name: $APT_PACKAGE1
+      version: $APT_VERSION1
+    - name: $APT_PACKAGE2" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apt
+  _test_apt_package_version $APT_PACKAGE1 $APT_VERSION1
+  _test_apt_package_version $APT_PACKAGE2 any
+  echo '[SUCCESS] apt test1 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test removal of one package and install of one new package
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set2.yaml
+  echo "conf:
+  apt:
+    packages:
+    - name: $APT_PACKAGE2
+    - name: $APT_PACKAGE3
+      version: $APT_VERSION3" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apt
+  _test_apt_package_version $APT_PACKAGE1 none
+  _test_apt_package_version $APT_PACKAGE2 any
+  _test_apt_package_version $APT_PACKAGE3 $APT_VERSION3
+  echo '[SUCCESS] apt test2 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test removal of all installed packages and install of one that already exists
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set3.yaml
+  echo "conf:
+  apt:
+    packages:
+    - name: $APT_PACKAGE4" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apt
+  _test_apt_package_version $APT_PACKAGE2 none
+  _test_apt_package_version $APT_PACKAGE3 none
+  echo '[SUCCESS] apt test3 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test package not installed by divingbell not removed
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set4.yaml
+  echo "conf:
+  apt:
+    packages:
+    - name: $APT_PACKAGE5" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apt
+  _test_apt_package_version $APT_PACKAGE4 any  # Should still be present
+  _test_apt_package_version $APT_PACKAGE5 any
+  echo '[SUCCESS] apt test4 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test invalid package name
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-invalid1.yaml
+  echo "conf:
+  apt:
+    packages:
+    - name: some-random-name
+      version: whatever" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apt expect_failure
+  _test_clog_msg 'E: Unable to locate package some-random-name'
+  echo '[SUCCESS] apt test5 passed successfully' >> "${TEST_RESULTS}"
+}
+
 # test daemonset value overrides for hosts and labels
 test_overrides(){
   overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-dryrun.yaml
@@ -848,9 +943,9 @@ test_overrides(){
 
   # Compare against expected number of generated daemonsets
   daemonset_count="$(echo "${tc_output}" | grep 'kind: DaemonSet' | wc -l)"
-  if [ "${daemonset_count}" != "13" ]; then
+  if [ "${daemonset_count}" != "14" ]; then
     echo '[FAILURE] overrides test 1 failed' >> "${TEST_RESULTS}"
-    echo "Expected 13 daemonsets; got '${daemonset_count}'" >> "${TEST_RESULTS}"
+    echo "Expected 14 daemonsets; got '${daemonset_count}'" >> "${TEST_RESULTS}"
     exit 1
   else
     echo '[SUCCESS] overrides test 1 passed successfully' >> "${TEST_RESULTS}"
@@ -1032,6 +1127,7 @@ test_limits
 test_mounts
 test_ethtool
 test_uamlite
+test_apt
 purge_containers
 test_overrides
 
