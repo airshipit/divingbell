@@ -54,6 +54,7 @@ APT_PACKAGE3=python-simplejson
 APT_VERSION3=3.8.1-1ubuntu2
 APT_PACKAGE4=less
 APT_PACKAGE5=python-setuptools
+APT_PACKAGE6=telnetd
 type lshw || apt -y install lshw
 nic_info="$(lshw -class network)"
 physical_nic=''
@@ -764,7 +765,8 @@ _test_apt_package_version(){
   local pkg_name=$1
   local pkg_ver=$2
   if [ ${pkg_ver} = "none" ]; then
-    if [[ $(dpkg -l | grep ${pkg_name}) ]]; then
+    # Does not include residual-config
+    if [[ $(dpkg -l | grep ${pkg_name} | grep -v ^rc) ]]; then
       echo "[FAIL] Package ${pkg_name} should not be installed" >> "${TEST_RESULTS}"
       return 1
     fi
@@ -846,6 +848,19 @@ test_apt(){
   get_container_status apt expect_failure
   _test_clog_msg 'E: Unable to locate package some-random-name'
   echo '[SUCCESS] apt test5 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test blacklistpkgs
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
+  echo "conf:
+  apt:
+    packages:
+    - name: $APT_PACKAGE6
+    blacklistpkgs:
+    - $APT_PACKAGE6" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apt
+  _test_apt_package_version $APT_PACKAGE6 none
+  echo '[SUCCESS] apt test6 passed successfully' >> "${TEST_RESULTS}"
 }
 
 # test daemonset value overrides for hosts and labels
