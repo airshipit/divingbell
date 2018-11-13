@@ -59,9 +59,25 @@ load_package_list_with_versions $(dpkg -l | awk 'NR>5 {print $2"="$3}')
 
 {{- if hasKey .Values.conf "apt" }}
 {{- if hasKey .Values.conf.apt "packages" }}
+apt-get update
+
+# Set all debconf selections up front
 {{- range .Values.conf.apt.packages }}
-if [[ "${CURRENT_PACKAGES[{{ .name | squote }}]+isset}" != "isset"{{- if .version }} || "${CURRENT_PACKAGES[{{ .name | squote }}]}" != {{ .version | squote }}{{- end }} ]]; then
-    apt-get install -y{{ if .repo }} -t {{ .repo | squote }}{{ end }} {{ .name | squote -}} {{- if .version }}={{ .version | squote }}{{ end }}
+{{- $pkg_name := .name }}
+{{- range .debconf }}
+    debconf-set-selections <<< "{{ $pkg_name }} {{ .question }} {{ .question_type }} {{ .answer }}"
+{{- end }}
+{{- end }}
+
+# Run dpkg in case of interruption of previous dpkg operation
+dpkg --configure -a
+
+# Perform package installs
+{{- range .Values.conf.apt.packages }}
+{{- $pkg_name := .name }}
+if [[ "${CURRENT_PACKAGES[{{ .name | squote }}]+isset}" != "isset"{{- if .version }} || "${CURRENT_PACKAGES[{{ .name | squote }}]}" != {{ .version }}{{- end }} ]]; then
+    # Run this in case some package installation was interrupted
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold{{- if .repo }} -t {{ .repo }}{{ end }} {{ .name -}} {{- if .version }}={{ .version }}{{ end }}
     INSTALLED_THIS_TIME="$INSTALLED_THIS_TIME {{ .name }}"
 fi
 REQUESTED_PACKAGES="$REQUESTED_PACKAGES {{ .name }}"
@@ -80,6 +96,7 @@ if [ -f ${persist_path}/packages ]; then
     TO_DELETE=$(comm -23 ${persist_path}/packages ${persist_path}/packages.requested)
     TO_KEEP=$(echo "$TO_DELETE" | comm -23 ${persist_path}/packages -)
     if [ ! -z "$TO_DELETE" ]; then
+        dpkg --configure -a
         for pkg in "$TO_DELETE"; do
             apt-get purge -y $pkg
         done
@@ -102,6 +119,7 @@ fi
 ######################################################
 
 {{- if hasKey .Values.conf.apt "blacklistpkgs" }}
+dpkg --configure -a
 {{- range .Values.conf.apt.blacklistpkgs }}
   {{- $package := . }}
   apt-get remove --autoremove -y {{ $package | squote }}

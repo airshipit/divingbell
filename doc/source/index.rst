@@ -158,6 +158,18 @@ Here is an example configuration for it::
           version: <VERSION1>
         - name: <PACKAGE2>
 
+It is also possible to provide debconf settings for packages the following
+way::
+
+    conf:
+      apt:
+        packages:
+        - name: openssh-server
+          debconf:
+          - question: openssh-server/permit-root-login
+            question_type: boolean
+            answer: false
+
 Operations
 ----------
 
