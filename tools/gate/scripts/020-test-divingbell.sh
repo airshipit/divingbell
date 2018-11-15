@@ -49,7 +49,7 @@ USERNAME4=userfour
 USERNAME4_SUDO=false
 APT_PACKAGE1=python-pbr
 APT_VERSION1=1.8.0-4ubuntu1
-APT_PACKAGE2=python-yaml
+APT_PACKAGE2=mysql-server
 APT_PACKAGE3=python-simplejson
 APT_VERSION3=3.8.1-1ubuntu2
 APT_PACKAGE4=less
@@ -804,12 +804,25 @@ test_apt(){
   apt:
     packages:
     - name: $APT_PACKAGE2
+      debconf:
+      - question: mysql-server/root_password
+        question_type: password
+        answer: rootpw
+      - question: mysql-server/root_password_again
+        question_type: password
+        answer: rootpw
     - name: $APT_PACKAGE3
       version: $APT_VERSION3" > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
   get_container_status apt
   _test_apt_package_version $APT_PACKAGE1 none
   _test_apt_package_version $APT_PACKAGE2 any
+  # Each entry in passwords.dat contains question value in Name and Template
+  # field, so grepping root_password should return 4 lines
+  if [[ $(grep root_password /var/cache/debconf/passwords.dat | wc -l) != 4 ]]; then
+    echo "[FAIL] Package $APT_PACKAGE2 should have debconf values configured" >> "${TEST_RESULTS}"
+    return 1
+  fi
   _test_apt_package_version $APT_PACKAGE3 $APT_VERSION3
   echo '[SUCCESS] apt test2 passed successfully' >> "${TEST_RESULTS}"
 
