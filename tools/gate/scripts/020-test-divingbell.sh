@@ -1149,13 +1149,15 @@ test_overrides(){
 init_default_state
 
 # run tests
-install_base
-test_sysctl
-test_limits
-test_mounts
-test_ethtool
-test_uamlite
-test_apt
+if [[ -z $SKIP_BASE_TESTS ]]; then
+  install_base
+  test_sysctl
+  test_limits
+  test_mounts
+  test_ethtool
+  test_uamlite
+  test_apt
+fi
 purge_containers
 test_overrides
 
