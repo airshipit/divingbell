@@ -18,6 +18,8 @@
 HELM=$1
 HTK_REPO=${HTK_REPO:-"https://github.com/openstack/openstack-helm-infra"}
 HTK_PATH=${HTK_PATH:-""}
+HTK_STABLE_COMMIT=${HTK_COMMIT:-"2fce7e821201a5f578331370703e164d5a932fcc"}
+BUILD_DIR=${BUILD_DIR:-$(mktemp -d)}
 DEP_UP_LIST=${DEP_UP_LIST:-"divingbell"}
 
 if [[ ! -z $(echo $http_proxy) ]]
@@ -31,7 +33,7 @@ function helm_serve {
   if [[ -d "$HOME/.helm" ]]; then
      echo ".helm directory found"
   else
-     ${HELM} init --client-only
+     ${HELM} init --client-only --skip-refresh
   fi
   if [[ -z $(curl -s 127.0.0.1:8879 | grep 'Helm Repository') ]]; then
      ${HELM} serve & > /dev/null
@@ -54,10 +56,15 @@ mkdir -p build
 pushd build
 git clone --depth 1 $HTK_REPO || true
 pushd ${HTK_REPO##*/}/$HTK_PATH
+git reset --hard "${HTK_STABLE_COMMIT}"
 
-git pull
-make helm-toolkit
 helm_serve
+if [[ ${HELM} != "helm" ]]
+then
+      export PATH=${PATH}:$(dirname ${HELM})
+fi
+
+make helm-toolkit
 
 popd && popd
 for c in $DEP_UP_LIST

@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-HELM := helm
-TASK := build
+BUILD_DIR       := $(shell mkdir -p build && mktemp -d -p build)
+HELM            := $(shell realpath $(BUILD_DIR))/helm
+TASK            := build
 
-EXCLUDES := helm-toolkit docs tests tools logs
-CHARTS := $(filter-out $(EXCLUDES), $(patsubst %/.,%,$(wildcard */.)))
-CHART := divingbell
+EXCLUDES        := helm-toolkit docs tests tools logs
+CHARTS          := $(filter-out $(EXCLUDES), $(patsubst %/.,%,$(wildcard */.)))
+CHART           := divingbell
+
+export
 
 all: $(CHART)
 
@@ -26,7 +29,7 @@ $(CHART):
 	@echo "===== Processing [$@] chart ====="
 	@make $(TASK)-$@
 
-init-%: clean
+init-%: clean helm-install
 	DEP_UP_LIST=$* tools/helm_tk.sh $(HELM)
 
 lint-%: init-%
@@ -62,3 +65,7 @@ docs: clean build_docs
 .PHONY: build_docs
 build_docs:
 	tox -e docs
+
+.PHONY: helm-install
+helm-install:
+	tools/helm_install.sh $(HELM)
