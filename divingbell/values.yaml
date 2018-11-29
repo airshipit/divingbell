@@ -121,6 +121,10 @@ pod:
           enabled: true
           min_ready_seconds: 0
           max_unavailable: 100%
+        exec:
+          enabled: true
+          min_ready_seconds: 0
+          max_unavailable: 100%
   resources:
     enabled: false
     ethtool:
@@ -172,6 +176,13 @@ pod:
       requests:
         memory: "128Mi"
         cpu: "100m"
+    exec:
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
 
 manifests:
   daemonset_ethtool: true
@@ -181,3 +192,4 @@ manifests:
   daemonset_limits: true
   daemonset_apt: true
   daemonset_perm: true
+  daemonset_exec: true

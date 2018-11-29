@@ -55,6 +55,7 @@ APT_VERSION3=3.8.1-1ubuntu2
 APT_PACKAGE4=less
 APT_PACKAGE5=python-setuptools
 APT_PACKAGE6=telnetd
+EXEC_DIR=/var/${NAME}/exec
 type lshw || apt -y install lshw
 nic_info="$(lshw -class network)"
 physical_nic=''
@@ -234,6 +235,31 @@ _test_sysctl_value(){
   _test_sysctl_default "${1}" "${2}"
   local key="${1//\//.}"
   test "$(cat /etc/sysctl.d/60-${NAME}-${key}.conf)" = "${key}=${2}"
+}
+
+_test_exec_match(){
+  expected_result="$1"
+  exec_testfile="$2"
+  testID="$3"
+  if [[ $expected_result != $(cat $exec_testfile) ]]; then
+    echo "[FAIL] exec $testID failed. Expected:"
+    echo $expected_result
+    echo but got:
+    echo $(cat $exec_testfile)
+    exit 1
+  fi
+  rm $exec_testfile
+}
+
+_test_exec_count(){
+  script_location="${1}"
+  script_name="${2}"
+  script_expected_run_count="${3}"
+  script_run_count=$(cat "${script_location}" | wc -l)
+  if [[ ${script_run_count} -ne ${script_expected_run_count} ]]; then
+    echo "[FAIL] Expected '${script_name}' to run '${script_expected_run_count}' times, but instead it ran '$script_run_count' times"
+    exit 1
+  fi
 }
 
 _test_clog_msg(){
@@ -958,6 +984,202 @@ test_apt(){
   echo '[SUCCESS] apt test6 passed successfully' >> "${TEST_RESULTS}"
 }
 
+# test exec module
+test_exec(){
+  # test script execution ordering, args, and env vars
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
+  echo 'conf:
+  exec:
+    030-script5.sh:
+      blocking_policy: foreground_halt_pod_on_failure
+      env:
+        env1: env1-val
+        env2: env2-val
+        env3: env3-val
+      args:
+      - arg1
+      - arg2
+      - arg3
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> exec_testfile
+        echo args: "$@" >> exec_testfile
+        echo env: "$env1 $env2 $env3" >> exec_testfile
+    005-script1.sh:
+      blocking_policy: foreground
+      data: |
+        #!/bin/bash
+        rm exec_testfile 2> /dev/null || true
+        echo script name: ${BASH_SOURCE} >> exec_testfile
+    015-script3.sh:
+      blocking_policy: foreground_halt_pod_on_failure
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> exec_testfile
+    008-script2.sh:
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> exec_testfile
+    025-script4.sh:
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> exec_testfile' > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status exec
+  expected_result='script name: ./005-script1.sh
+script name: ./008-script2.sh
+script name: ./015-script3.sh
+script name: ./025-script4.sh
+script name: ./030-script5.sh
+args: arg1 arg2 arg3
+env: env1-val env2-val env3-val'
+  _test_exec_match "$expected_result" "${EXEC_DIR}/exec_testfile" "test1"
+  echo '[SUCCESS] exec test1 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test blocking_policy
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set2.yaml
+  echo 'conf:
+  exec:
+    030-script5.sh:
+      blocking_policy: foreground_halt_pod_on_failure
+      env:
+        env1: env1-val
+        env2: env2-val
+        env3: env3-val
+      args:
+      - arg1
+      - arg2
+      - arg3
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> exec_testfile
+        echo args: "$@" >> exec_testfile
+        echo env: "$env1 $env2 $env3" >> exec_testfile
+    005-script1.sh:
+      blocking_policy: foreground
+      data: |
+        #!/bin/bash
+        rm exec_testfile 2> /dev/null || true
+        echo script name: ${BASH_SOURCE} >> exec_testfile
+    015-script3.sh:
+      blocking_policy: foreground_halt_pod_on_failure
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> exec_testfile
+        false
+    008-script2.sh:
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> exec_testfile
+    025-script4.sh:
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> exec_testfile' > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status exec expect_failure
+  expected_result='script name: ./005-script1.sh
+script name: ./008-script2.sh
+script name: ./015-script3.sh'
+  _test_exec_match "$expected_result" "${EXEC_DIR}/exec_testfile" "test2"
+  echo '[SUCCESS] exec test2 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test invalid rerun_policy
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set3.yaml
+  echo 'conf:
+  exec:
+    030-script5.sh:
+      rerun_policy: foo
+      data: |
+        #!/bin/bash
+        true' > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .rerun_policy. FOR' || \
+    (echo "[FAIL] exec test3 did not receive expected 'BAD .rerun_policy. FOR' error" && exit 1)
+  echo '[SUCCESS] exec test3 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test invalid blocking_policy
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set4.yaml
+  echo 'conf:
+  exec:
+    030-script5.sh:
+      blocking_policy: foo
+      data: |
+        #!/bin/bash
+        true' > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .blocking_policy. FOR' || \
+    (echo "[FAIL] exec test4 did not receive expected 'BAD .blocking_policy. FOR' error" && exit 1)
+  echo '[SUCCESS] exec test4 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test rerun_policies:
+  # 1. Unspecified
+  # 2. always
+  # 3. once_successfully, when script passes
+  # 4. once_successfully, when script fails
+  # 5. never
+
+  # first execution
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set5.yaml
+  echo 'conf:
+  exec:
+    001-script1.sh:
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> script1
+    002-script2.sh:
+      rerun_policy: always
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> script2
+    003-script3.sh:
+      rerun_policy: once_successfully
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> script3
+    004-script4.sh:
+      rerun_policy: once_successfully
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> script4
+        false
+    005-script5.sh:
+      rerun_policy: never
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> script5
+      env:
+        env3: env3-val
+        env1: env1-val
+        env2: env2-val
+      args:
+      - arg2
+      - arg1
+      - arg3
+manifests:
+  daemonset_ethtool: false
+  daemonset_mounts: false
+  daemonset_uamlite: false
+  daemonset_sysctl: false
+  daemonset_limits: false
+  daemonset_apt: false
+  daemonset_perm: false' > "${overrides_yaml}"
+
+  install_base "--values=${overrides_yaml}"
+  get_container_status exec
+
+  # run several times with the same values and evaluate results
+  # (ensure no ordering issues cause hashing inconsistencies)
+  for i in $(seq 0 11); do
+    install_base "--values=${overrides_yaml}"
+    get_container_status exec
+    _test_exec_count "${EXEC_DIR}/script1" '001-script1.sh' $(($i + 2))
+    _test_exec_count "${EXEC_DIR}/script2" '002-script1.sh' $(($i + 2))
+    _test_exec_count "${EXEC_DIR}/script3" '003-script1.sh' '1'
+    _test_exec_count "${EXEC_DIR}/script4" '004-script1.sh' $(($i + 2))
+    _test_exec_count "${EXEC_DIR}/script5" '005-script1.sh' '1'
+    echo "[SUCCESS] exec test$(($i + 5)) passed successfully" >> "${TEST_RESULTS}"
+  done
+
+}
+
 # test daemonset value overrides for hosts and labels
 test_overrides(){
   overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-dryrun.yaml
@@ -1053,7 +1275,7 @@ test_overrides(){
 
   # Compare against expected number of generated daemonsets
   daemonset_count="$(echo "${tc_output}" | grep 'kind: DaemonSet' | wc -l)"
-  if [ "${daemonset_count}" != "15" ]; then
+  if [ "${daemonset_count}" != "16" ]; then
     echo '[FAILURE] overrides test 1 failed' >> "${TEST_RESULTS}"
     echo "Expected 15 daemonsets; got '${daemonset_count}'" >> "${TEST_RESULTS}"
     exit 1
@@ -1240,6 +1462,7 @@ if [[ -z $SKIP_BASE_TESTS ]]; then
   test_ethtool
   test_uamlite
   test_apt
+  test_exec
 fi
 purge_containers
 test_overrides

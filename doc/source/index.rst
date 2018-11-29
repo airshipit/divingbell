@@ -170,6 +170,88 @@ way::
             question_type: boolean
             answer: false
 
+exec
+^^^^
+
+Used to execute scripts on nodes, ex::
+
+    exec:
+      002-script2.sh:
+        data: |
+          #!/bin/bash
+          echo ${BASH_SOURCE}
+      001-script1.sh:
+        blocking_policy: foreground_halt_pod_on_failure
+        env:
+          env1: env1-val
+          env2: env2-val
+        args:
+        - arg1
+        - arg2
+        data: |
+          #!/bin/bash
+          echo script name: ${BASH_SOURCE}
+          echo args: $@
+          echo env: $env1 $env2 $env3
+
+Scripts are executed in alphanumeric order with the key names used. Therefore
+in this example, 001-script1.sh runs first, followed by 002-script2.sh.
+Targeting of directives to specific nodes by hostname or node label is
+achievable by use of the overrides capability described below.
+
+The following set of options are fully implemeneted::
+
+    ``rerun_policy`` may be optionally set to ``always``, ``never``, or
+    ``once_successfully`` for a given script. That script would always be rerun,
+    never be rerun, or rerun until the first successful execution respectively.
+    Default value is ``always``. This is tracked via a hash of the dict object
+    for the script (i.e. script name, script data, script args, script env, etc).
+    If any of that info changes, so will the hash, and it will be seen as a new
+    object which will be executed regardless of this setting.
+
+The following set of options are partially implemeneted::
+
+    ``blocking_policy`` may optionally be set to ``background``, ``foreground``,
+    or ``foreground_halt_pod_on_failure`` for a given script. This may be used to
+    run a script in the background (running in parallel, i.e. non-blocking) or
+    in the foreground (blocking). In either case, a failure of the script does
+    not cause a failure (crashloop) of the pod. The third option may be used
+    where the reverse behavior is desired (i.e., it would not proceed with
+    running the next script in the sequence until the current script ran
+    successfully). ``background`` option is not yet implemeneted. Default value
+    Deafult value is ``foreground``.
+
+The following set of options are not yet implemeneted::
+
+    ``script_timeout`` may optionally be set to the number of seconds to wait for
+    script completion before termination. Default value is ``3600`` (1 hour).
+
+    ``rerun_interval`` may be optionally set to the number of seconds to wait
+    between rerunning a given script which ran successfully the previous time.
+    Default value is ``infinite``.
+
+    ``rerun_interval_persist`` may be optionally set to ``true`` for
+    a given script. This allows a script to persist its rerun interval through a
+    pod/node restart. Otherwise, the time since last successful script execution
+    will not be considered on pod/node startup. Default value is ``false``.
+
+    ``rerun_max_count`` may be optionally set to the maximum number of times a
+    succeeding script should be retried. Successful exec count does not persist
+    through pod/node restart. Default value is ``infinite``.
+
+    ``retry_interval`` may be optionally set to the number of seconds to wait
+    between rerunning a given script which did not run successfully the previous
+    time. Default value is set to the ``rerun_interval``.
+
+    ``retry_interval_persist`` may be optionally set to ``true`` for
+    a given script. This allows a script to persist its retry interval through a
+    pod/node restart. Otherwise, the time since last failed script execution
+    will not be considered on pod/node startup. Default value is ``false``.
+
+    ``retry_max_count`` may be optionally set to the maximum number of times a
+    failing script should be retried. Failed exec count does not persist
+    through pod/node restart. Default value is ``infinite``.
+
 Operations
 ----------
 

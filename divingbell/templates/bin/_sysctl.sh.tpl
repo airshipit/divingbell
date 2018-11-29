@@ -96,9 +96,9 @@ add_sysctl_param {{ $key | squote }} {{ $value | squote }}
 # Revert any previously applied sysctl settings which are now absent
 prev_files="$(find "${defaults_path}" -type f)"
 if [ -n "${prev_files}" ]; then
-  basename -a ${prev_files} | sort > /tmp/prev_settings
-  echo "${curr_settings}" | sort > /tmp/curr_settings
-  revert_list="$(comm -23 /tmp/prev_settings /tmp/curr_settings)"
+  basename -a ${prev_files} | sort > /tmp/prev_sysctl
+  echo "${curr_settings}" | sort > /tmp/curr_sysctl
+  revert_list="$(comm -23 /tmp/prev_sysctl /tmp/curr_sysctl)"
   IFS=$'\n'
   for orig_sysctl_setting in ${revert_list}; do
     rm "${persist_path}/${orig_sysctl_setting}"
