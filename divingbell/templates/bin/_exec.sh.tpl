@@ -16,6 +16,8 @@
 # limitations under the License.
 */}}
 
+{{- $exec_loop_sleep_interval := 60 }}
+
 set -e
 
 cat <<'UNIQUE_EOF_9c341059-25a0-4725-9489-1789e255e381' > {{ .Values.conf.chroot_mnt_path | quote }}/tmp/exec_host_{{ .Chart.Version }}.sh
@@ -74,19 +76,28 @@ cd "${exec_path}"
       {{- $_ := set $.Values "__blocking_policy" $keypath.blocking_policy }}
     {{- end }}
 
-    {{- $_ := set $.Values "__timeout" 3600 }}
+    {{- $_ := set $.Values "__timeout" 1800 }}
     {{- if hasKey $keypath "timeout" }}
-      {{- fail (print "NOT IMPLEMENTED: 'timeout' FOR '" $script "'") }}
+      {{- if eq ($keypath.timeout | toString) "infinite" }}
+        {{- fail (print "BAD 'timeout' FOR '" $script "': 'infinite' timeouts not supported.") }}
+      {{- end }}
       {{- $_ := set $.Values "__timeout" $keypath.timeout }}
     {{- end }}
 
     {{- $_ := set $.Values "__rerun_interval" "infinite" }}
     {{- if hasKey $keypath "rerun_interval" }}
-      {{- fail (print "NOT IMPLEMENTED: 'rerun_interval' FOR '" $script "'") }}
+      {{- if not (eq ($keypath.rerun_interval | toString) "infinity") }}
+        {{- if lt ($keypath.rerun_interval | int) $exec_loop_sleep_interval }}
+          {{- fail (print "BAD 'rerun_interval' FOR '" $script "': Got '" $keypath.rerun_interval "', but expected >= '" $exec_loop_sleep_interval "'.") }}
+        {{- end }}
+        {{- if not (eq $.Values.__rerun_policy "always") }}
+          {{- fail (print "BAD COMBINATION: Must use 'rerun_policy' of 'always' when defining a finite 'rerun_interval'. Got 'rerun_policy' of '" $.Values.__rerun_policy "' and 'rerun_interval' of '" $keypath.rerun_interval "' for '" $script "'.") }}
+        {{- end }}
+      {{- end }}
       {{- $_ := set $.Values "__rerun_interval" $keypath.rerun_interval }}
     {{- end }}
 
-    {{- $_ := set $.Values "__rerun_interval_persist" "false" }}
+    {{- $_ := set $.Values "__rerun_interval_persist" "true" }}
     {{- if hasKey $keypath "rerun_interval_persist" }}
       {{- fail (print "NOT IMPLEMENTED: 'rerun_interval_persist' FOR '" $script "'") }}
       {{- $_ := set $.Values "__rerun_interval_persist" $keypath.rerun_interval_persist }}
@@ -98,13 +109,20 @@ cd "${exec_path}"
       {{- $_ := set $.Values "__rerun_max_count" $keypath.rerun_max_count }}
     {{- end }}
 
-    {{- $_ := set $.Values "__retry_interval" $.Values.__rerun_interval }}
+    {{- $_ := set $.Values "__retry_interval" (print $.Values.__rerun_interval) }}
     {{- if hasKey $keypath "retry_interval" }}
-      {{- fail (print "NOT IMPLEMENTED: 'retry_interval' FOR '" $script "'") }}
+      {{- if not (eq ($keypath.retry_interval | toString) "infinity") }}
+        {{- if lt ($keypath.retry_interval | int) $exec_loop_sleep_interval }}
+          {{- fail (print "BAD 'retry_interval' FOR '" $script "': Got '" $keypath.retry_interval "', but expected >= '" $exec_loop_sleep_interval "'.") }}
+        {{- end }}
+        {{- if and (not (eq $.Values.__rerun_policy "always")) (not (eq $.Values.__rerun_policy "once_successfully")) }}
+          {{- fail (print "BAD COMBINATION: Must use 'rerun_policy' of 'always' or 'once_successfully' when defining a finite 'retry_interval'. Got 'rerun_policy' of '" $.Values.__rerun_policy "' and 'retry_interval' of '" $keypath.retry_interval "' for '" $script "'.") }}
+        {{- end }}
+      {{- end }}
       {{- $_ := set $.Values "__retry_interval" $keypath.retry_interval }}
     {{- end }}
 
-    {{- $_ := set $.Values "__retry_interval_persist" "false" }}
+    {{- $_ := set $.Values "__retry_interval_persist" "true" }}
     {{- if hasKey $keypath "retry_interval_persist" }}
       {{- fail (print "NOT IMPLEMENTED: 'retry_interval_persist' FOR '" $script "'") }}
       {{- $_ := set $.Values "__retry_interval_persist" $keypath.retry_interval_persist }}
@@ -115,15 +133,43 @@ cd "${exec_path}"
       {{- fail (print "NOT IMPLEMENTED: 'retry_max_count' FOR '" $script "'") }}
       {{- $_ := set $.Values "__retry_max_count" $keypath.retry_max_count }}
     {{- end }}
+
     cat <<'UNIQUE_EOF_1840dbd4-09e1-4725-87f5-3b6944b80526' > {{ $script }}
 {{ $keypath.data }}
 UNIQUE_EOF_1840dbd4-09e1-4725-87f5-3b6944b80526
     chmod 700 {{ $script }}
+    # check rerun policy
+    hash_check=fail
     if  [[ {{ $.Values.__rerun_policy }} = always ]] || \
         [[ ! -f ${hash}/exit_code ]] || \
        ([[ {{ $.Values.__rerun_policy }} = once_successfully ]] && \
-          [[ -f ${hash}/exit_code ]] && \
-          [[ $(cat ${hash}/exit_code) != 0 ]]); then
+        [[ $(cat ${hash}/exit_code) != 0 ]]); then
+      hash_check=pass
+    fi
+    # check rerun/retry interval
+    interval_check=fail
+    if  [[ ! -f ${hash}/last_run_timestamp ]] || [[ ! -f ${hash}/exit_code ]]; then
+      interval_check=pass
+    elif [[ $(cat ${hash}/exit_code) = 0 ]]; then
+      if [[ {{ $.Values.__rerun_interval }} = infinite ]]; then
+        interval_check=pass
+      elif [[ $(date +"%s") -ge $(($(cat ${hash}/last_run_timestamp) + {{ $.Values.__rerun_interval }})) ]]; then
+        interval_check=pass
+      fi
+    elif [[ $(cat ${hash}/exit_code) != 0 ]]; then
+      if [[ {{ $.Values.__retry_interval }} = infinite ]]; then
+        interval_check=pass
+      elif [[ $(date +"%s") -ge $(($(cat ${hash}/last_run_timestamp) + {{ $.Values.__retry_interval }})) ]]; then
+        interval_check=pass
+      fi
+    fi
+    if [[ $hash_check = pass ]] && [[ $interval_check = pass ]]; then
+      if [[ -f ${hash}/exit_code ]]; then
+        # remove previous run record, in case this run is interrupted
+        rm ${hash}/exit_code
+      fi
+      # write timestamp at beginning of execution
+      echo $(date +"%s") > "${hash}/last_run_timestamp"
       {{- if hasKey $keypath "env" }}
         {{- range $env_key, $env_val := $keypath.env }}
           {{ $env_key }}={{ $env_val | squote }} \
@@ -135,7 +181,26 @@ UNIQUE_EOF_1840dbd4-09e1-4725-87f5-3b6944b80526
           {{ $arg | squote }} \
         {{- end }}
       {{- end }}
-      && echo 0 > "${hash}/exit_code" || echo $? > "${hash}/exit_code"
+      &
+      pid=$!
+      time_waited=0
+      sleep_interval=5
+      timeout={{ $.Values.__timeout }}
+      while true; do
+        if [[ $time_waited -ge $timeout ]]; then
+          log.ERROR "Hit '$timeout' second timeout waiting for '{{ $script }}' - terminating."
+          # ask nicely first
+          kill $pid
+          sleep 10
+          # force kill if still running
+          ps $pid > /dev/null && kill -9 $pid
+          break
+        fi
+        ps $pid > /dev/null || break
+        sleep $sleep_interval
+        time_waited=$(($time_waited + $sleep_interval))
+      done
+      wait $pid && echo 0 > "${hash}/exit_code" || echo $? > "${hash}/exit_code"
       {{- if hasKey $keypath "blocking_policy" }}
         {{- if eq $keypath.blocking_policy "foreground_halt_pod_on_failure" }}
           if [[ $(cat "${hash}/exit_code") != '0' ]]; then
@@ -144,20 +209,16 @@ UNIQUE_EOF_1840dbd4-09e1-4725-87f5-3b6944b80526
         {{- end }}
       {{- end }}
     fi
-  {{ end }}
+  {{- end }}
 {{- end }}
 
-exit 0
 UNIQUE_EOF_9c341059-25a0-4725-9489-1789e255e381
 
 chmod 700 {{ .Values.conf.chroot_mnt_path | quote }}/tmp/exec_host_{{ .Chart.Version }}.sh
-chroot {{ .Values.conf.chroot_mnt_path | quote }} /tmp/exec_host_{{ .Chart.Version }}.sh
 
-sleep 1
-echo 'INFO Putting the daemon to sleep.'
-
-while [ 1 ]; do
-  sleep 300
+while true; do
+  chroot {{ .Values.conf.chroot_mnt_path | quote }} /tmp/exec_host_{{ .Chart.Version }}.sh
+  sleep 2
+  echo 'INFO Putting the daemon to sleep.'
+  sleep {{ $exec_loop_sleep_interval }}
 done
-
-exit 0

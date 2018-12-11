@@ -1178,6 +1178,123 @@ manifests:
     echo "[SUCCESS] exec test$(($i + 5)) passed successfully" >> "${TEST_RESULTS}"
   done
 
+  # test timeout
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set17.yaml
+  echo 'conf:
+  exec:
+    011-timeout.sh:
+      timeout: 11
+      data: |
+        #!/bin/bash
+        sleep 60' > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status exec
+  _test_clog_msg 'timeout waiting for'
+  echo '[SUCCESS] exec test17 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test invalid timeout
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set18.yaml
+  echo 'conf:
+  exec:
+    011-timeout.sh:
+      timeout: infinite
+      data: |
+        #!/bin/bash
+        sleep 60' > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .timeout. FOR' || \
+    (echo "[FAIL] exec test18 did not receive expected 'BAD .timeout. FOR' error" && exit 1)
+  echo '[SUCCESS] exec test18 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test invalid rerun_interval (too short)
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set19.yaml
+  echo 'conf:
+  exec:
+    012-rerun-interval.sh:
+      rerun_interval: 30
+      data: |
+        #!/bin/bash
+        true' > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .rerun_interval. FOR' || \
+    (echo "[FAIL] exec test19 did not receive expected 'BAD .rerun_interval. FOR' error" && exit 1)
+  echo '[SUCCESS] exec test19 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test invalid retry_interval (too short)
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set20.yaml
+  echo 'conf:
+  exec:
+    012-retry-interval.sh:
+      retry_interval: 30
+      data: |
+        #!/bin/bash
+        true' > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .retry_interval. FOR' || \
+    (echo "[FAIL] exec test20 did not receive expected 'BAD .retry_interval. FOR' error" && exit 1)
+  echo '[SUCCESS] exec test20 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test invalid rerun_interval combination
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set21.yaml
+  echo 'conf:
+  exec:
+    012-rerun-interval.sh:
+      rerun_interval: 60
+      rerun_policy: once_successfully
+      data: |
+        #!/bin/bash
+        true' > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD COMBINATION' || \
+    (echo "[FAIL] exec test21 did not receive expected 'BAD COMBINATION' error" && exit 1)
+  echo '[SUCCESS] exec test21 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test invalid retry_interval combination
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set22.yaml
+  echo 'conf:
+  exec:
+    012-retry-interval.sh:
+      retry_interval: 60
+      rerun_policy: never
+      data: |
+        #!/bin/bash
+        true' > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD COMBINATION' || \
+    (echo "[FAIL] exec test22 did not receive expected 'BAD COMBINATION' error" && exit 1)
+  echo '[SUCCESS] exec test22 passed successfully' >> "${TEST_RESULTS}"
+
+  # test rerun_interval
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set23.yaml
+  echo 'conf:
+  exec:
+    012-rerun-interval.sh:
+      rerun_interval: 60
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> exec_testfile' > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status exec
+  sleep 72
+  get_container_status exec
+  expected_result='script name: ./012-rerun-interval.sh
+script name: ./012-rerun-interval.sh'
+  _test_exec_match "$expected_result" "${EXEC_DIR}/exec_testfile" "test23"
+  echo '[SUCCESS] exec test23 passed successfully' >> "${TEST_RESULTS}"
+
+  # test retry_interval
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set24.yaml
+  echo 'conf:
+  exec:
+    012-retry-interval.sh:
+      retry_interval: 60
+      data: |
+        #!/bin/bash
+        echo script name: ${BASH_SOURCE} >> exec_testfile
+        false' > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status exec
+  sleep 72
+  get_container_status exec
+  expected_result='script name: ./012-retry-interval.sh
+script name: ./012-retry-interval.sh'
+  _test_exec_match "$expected_result" "${EXEC_DIR}/exec_testfile" "test24"
+  echo '[SUCCESS] exec test24 passed successfully' >> "${TEST_RESULTS}"
 }
 
 # test daemonset value overrides for hosts and labels

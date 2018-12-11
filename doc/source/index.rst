@@ -209,6 +209,17 @@ The following set of options are fully implemeneted::
     If any of that info changes, so will the hash, and it will be seen as a new
     object which will be executed regardless of this setting.
 
+    ``script_timeout`` may optionally be set to the number of seconds to wait for
+    script completion before termination. Default value is ``1800`` (30 min).
+
+    ``rerun_interval`` may be optionally set to the number of seconds to wait
+    between rerunning a given script which ran successfully the previous time.
+    Default value is ``infinite``.
+
+    ``retry_interval`` may be optionally set to the number of seconds to wait
+    between rerunning a given script which did not run successfully the previous
+    time. Default behavior is to match the ``rerun_interval``.
+
 The following set of options are partially implemeneted::
 
     ``blocking_policy`` may optionally be set to ``background``, ``foreground``,
@@ -223,30 +234,17 @@ The following set of options are partially implemeneted::
 
 The following set of options are not yet implemeneted::
 
-    ``script_timeout`` may optionally be set to the number of seconds to wait for
-    script completion before termination. Default value is ``3600`` (1 hour).
-
-    ``rerun_interval`` may be optionally set to the number of seconds to wait
-    between rerunning a given script which ran successfully the previous time.
-    Default value is ``infinite``.
-
-    ``rerun_interval_persist`` may be optionally set to ``true`` for
-    a given script. This allows a script to persist its rerun interval through a
-    pod/node restart. Otherwise, the time since last successful script execution
-    will not be considered on pod/node startup. Default value is ``false``.
+    ``rerun_interval_persist`` may be optionally set to ``false`` for a given
+    script. This makes the script execute on pod/node startup regardless of the
+    interval since the last successful execution. Default value is ``true``.
 
     ``rerun_max_count`` may be optionally set to the maximum number of times a
     succeeding script should be retried. Successful exec count does not persist
     through pod/node restart. Default value is ``infinite``.
 
-    ``retry_interval`` may be optionally set to the number of seconds to wait
-    between rerunning a given script which did not run successfully the previous
-    time. Default value is set to the ``rerun_interval``.
-
-    ``retry_interval_persist`` may be optionally set to ``true`` for
-    a given script. This allows a script to persist its retry interval through a
-    pod/node restart. Otherwise, the time since last failed script execution
-    will not be considered on pod/node startup. Default value is ``false``.
+    ``retry_interval_persist`` may be optionally set to ``false`` for a given
+    script. This makes the script execute on pod/node startup, regardless of the
+    time since the last execution. Default value is ``true``.
 
     ``retry_max_count`` may be optionally set to the maximum number of times a
     failing script should be retried. Failed exec count does not persist
