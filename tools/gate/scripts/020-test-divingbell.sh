@@ -435,6 +435,7 @@ test_perm(){
   local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}.yaml
   echo "conf:
   perm:
+    paths:
     -
       path: ${p_test_file1}
       owner: 'root'
@@ -452,6 +453,7 @@ test_perm(){
   echo "[SUCCESS] Positive test for perm passed successfully" >> "${TEST_RESULTS}"
   echo "conf:
   perm:
+    paths:
     -
       path: ${p_test_file1}
       owner: 'root'
@@ -462,6 +464,49 @@ test_perm(){
   _test_perm_value ${p_test_file1} root shadow 640
   _test_perm_value ${p_test_file2} ${p_test_file2##*.} ${p_test_file2##*.} 777
   echo "[SUCCESS] Backup test for perm passed successfully" >> "${TEST_RESULTS}"
+  # Test invalid rerun_interval (too short)
+  echo "conf:
+  perm:
+    rerun_interval: 30
+    paths:
+    -
+      path: ${p_test_file1}
+      owner: 'root'
+      group: 'shadow'
+      permissions: '0640'" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .rerun_interval. Got' || \
+    (echo "[FAIL] perm test invalid rerun_interval value did not receive expected 'BAD .rerun_interval. Got' error" && exit 1)
+  echo '[SUCCESS] perm test invalid rerun_interval passed successfully' >> "${TEST_RESULTS}"
+  # Test invalid rerun_interval combination
+  echo "conf:
+  perm:
+    rerun_interval: 60
+    rerun_policy: once_successfully
+    paths:
+    -
+      path: ${p_test_file1}
+      owner: 'root'
+      group: 'shadow'
+      permissions: '0640'" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD COMBINATION' || \
+    (echo "[FAIL] perm invalid rerun_interval combination did not receive expected 'BAD COMBINATION' error" && exit 1)
+  echo '[SUCCESS] perm invalid rerun_interval combination passed successfully' >> "${TEST_RESULTS}"
+  # test rerun_interval
+  echo "conf:
+  perm:
+    rerun_interval: 60
+    paths:
+    -
+      path: ${p_test_file1}
+      owner: 'root'
+      group: 'shadow'
+      permissions: '0640'" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status perm
+  sleep 72
+  get_container_status perm
+  _test_perm_value ${p_test_file1} root shadow 640
+  echo '[SUCCESS] perm rerun_interval passed successfully' >> "${TEST_RESULTS}"
   _perm_teardown
 }
 

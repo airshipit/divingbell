@@ -16,6 +16,8 @@
 # limitations under the License.
 */}}
 
+{{- $perm_loop_sleep_interval := 60 }}
+
 set -e
 
 cat <<'EOF' > {{ .Values.conf.chroot_mnt_path | quote }}/tmp/perm_host.sh
@@ -82,54 +84,127 @@ add_single_perm(){
 
 }
 
-{{- range $perm := .Values.conf.perm }}
-add_perm {{ $perm.path | squote }} {{ $perm.owner | squote }} {{ $perm.group | squote }} {{ $perm.permissions | squote }}
+revert_perm(){
+# Revert
+  prev_files="$(find "${backup_path}" -type f ! -name last_run_timestamp)"
+  if [ -n "${prev_files}" ]; then
+    basename -a ${prev_files} | sort > /tmp/prev_perm
+    echo "${applied_perm}" | sort > /tmp/curr_perm
+    log.DEBUG /tmp/prev_perm
+    log.DEBUG /tmp/curr_perm
+    revert_list="$(comm -23 /tmp/prev_perm /tmp/curr_perm)"
+    IFS=$'\n'
+    for o_perm in ${revert_list}; do
+      first=1
+      while IFS=' ' read -r a1 a2; do
+        if [ "$first" -eq 1 ]; then
+          $(chmod $a1 $a2)
+          first=0
+        else
+          $(chown $a1 $a2)
+        fi
+      done < "${backup_path}/${o_perm}"
+
+      rm "${backup_path}/${o_perm}"
+      log.INFO "Reverted permissions and owner: ${backup_path}/${o_perm}"
+    done
+  fi
+}
+
+{{- $_ := set $.Values "__rerun_policy" "always" }}
+{{- if hasKey .Values.conf "perm" }}
+{{- if hasKey .Values.conf.perm "rerun_policy" }}
+  {{- if and (not (eq .Values.conf.perm.rerun_policy "always")) (not (eq .Values.conf.perm.rerun_policy "never")) (not (eq .Values.conf.perm.rerun_policy "once_successfully")) }}
+    {{- fail (print "BAD 'rerun_policy' Got '" .Values.conf.perm.rerun_policy "', but expected 'always', 'never', or 'once_successfully'.") }}
+  {{- end }}
+  {{- $_ := set $.Values "__rerun_policy" .Values.conf.perm.rerun_policy }}
 {{- end }}
 
-log.INFO "Applied: ${applied_perm}"
+{{- $_ := set $.Values "__rerun_interval" "infinite" }}
+{{- if hasKey .Values.conf.perm "rerun_interval" }}
+{{- $_ := set $.Values "__rerun_interval" .Values.conf.perm.rerun_interval }}
 
-# Revert
-prev_files="$(find "${backup_path}" -type f)"
-if [ -n "${prev_files}" ]; then
-  basename -a ${prev_files} | sort > /tmp/prev_perm
-  echo "${applied_perm}" | sort > /tmp/curr_perm
-  log.DEBUG /tmp/prev_perm
-  log.DEBUG /tmp/curr_perm
-  revert_list="$(comm -23 /tmp/prev_perm /tmp/curr_perm)"
-  IFS=$'\n'
-  for o_perm in ${revert_list}; do
-    first=1
-    while IFS=' ' read -r a1 a2; do
-      if [ "$first" -eq 1 ]; then
-        $(chmod $a1 $a2)
-        first=0
-      else
-        $(chown $a1 $a2)
-      fi
-    done < "${backup_path}/${o_perm}"
+  {{- if not (eq (.Values.conf.perm.rerun_interval | toString) "infinity") }}
+    {{- if lt (.Values.conf.perm.rerun_interval | int) $perm_loop_sleep_interval }}
+      {{- fail (print "BAD 'rerun_interval' Got '" $.Values.__rerun_interval "', but expected >= '" $perm_loop_sleep_interval "'.") }}
+    {{- end }}
+    {{- if not (eq $.Values.__rerun_policy "always") }}
+      {{- fail (print "BAD COMBINATION: Must use 'rerun_policy' of 'always' when defining a finite 'retry_interval'. Got 'rerun_policy' of '" $.Values.__rerun_policy "' and 'retry_interval' of '" $.Values.__rerun_interval "'.") }}
+    {{- end }}
+  {{- end }}
+  {{- $_ := set $.Values "__rerun_interval" .Values.conf.perm.rerun_interval }}
+{{- end }}
 
-    rm "${backup_path}/${o_perm}"
-    log.INFO "Reverted permissions and owner: ${backup_path}/${o_perm}"
-  done
+{{- if hasKey .Values.conf.perm "rerun_policy" }}
+      {{- if and (not (eq $.Values.__rerun_policy "always")) (not (eq $.Values.__rerun_policy "never")) (not (eq $.Values.__rerun_policy "once_successfully")) }}
+        {{- fail (print "BAD 'rerun_policy' : Got '" $.Values.__rerun_policy "', but expected 'always', 'never', or 'once_successfully'.") }}
+      {{- end }}
+{{- end }}
+
+cd "${backup_path}"
+
+{{- $_ := set $.Values "__values_hash" list }}
+{{- $hash := $.Values.__values_hash | toString | sha256sum }}
+
+hash={{ $hash | squote }}
+if [ ! -d "${hash}" ]; then
+  mkdir -p "${hash}"
 fi
 
-if [ -n "${curr_settings}" ]; then
+# check rerun policy
+hash_check=fail
+if  [[ {{ $.Values.__rerun_policy }} = always ]] || \
+    [[ ! -f ${hash}/exit_code ]] || \
+   ([[ {{ $.Values.__rerun_policy }} = once_successfully ]] && \
+    [[ $(cat ${hash}/exit_code) != 0 ]]); then
+  hash_check=pass
+fi
+# check rerun interval
+interval_check=fail
+if  [[ ! -f ${hash}/last_run_timestamp ]] || [[ ! -f ${hash}/exit_code ]]; then
+  interval_check=pass
+elif [[ $(cat ${hash}/exit_code) = 0 ]]; then
+  if [[ {{ $.Values.__rerun_interval }} = infinite ]]; then
+    interval_check=pass
+  elif [[ $(date +"%s") -ge $(($(cat ${hash}/last_run_timestamp) + {{ $.Values.__rerun_interval }})) ]]; then
+    interval_check=pass
+  fi
+fi
+if [[ $hash_check = pass ]] && [[ $interval_check = pass ]]; then
+  if [[ -f ${hash}/exit_code ]]; then
+    # remove previous run record, in case this run is interrupted
+    rm ${hash}/exit_code
+  fi
+ # write timestamp at beginning of execution
+ log.INFO 'All permissions successfully applied on this node.'
+ echo $(date +"%s") > "${hash}/last_run_timestamp"
+
+ {{- range $perm := .Values.conf.perm.paths }}
+ add_perm {{ $perm.path | squote }} {{ $perm.owner | squote }} {{ $perm.group | squote }} {{ $perm.permissions | squote }}
+ {{- end }}
+ log.INFO "Applied: ${applied_perm}"
+
+ revert_perm
+
+ if [ -n "${curr_settings}" ]; then
   log.INFO 'All permissions successfully applied on this node.'
-else
+ else
   log.WARN 'No permissions overrides defined for this node.'
+ fi
 fi
 
+echo 0 > "${hash}/exit_code"
 exit 0
+{{- end}}
 EOF
 
 chmod 755 {{ .Values.conf.chroot_mnt_path | quote }}/tmp/perm_host.sh
-chroot {{ .Values.conf.chroot_mnt_path | quote }} /tmp/perm_host.sh
 
-sleep 1
-echo 'INFO Putting the daemon to sleep.'
-
-while [ 1 ]; do
-  sleep 300
+while true; do
+  chroot {{ .Values.conf.chroot_mnt_path | quote }} /tmp/perm_host.sh
+  sleep 2
+  echo 'INFO Putting the daemon to sleep.'
+  sleep {{ $perm_loop_sleep_interval }}
 done
 
 exit 0

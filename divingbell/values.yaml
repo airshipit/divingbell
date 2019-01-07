@@ -32,6 +32,10 @@ conf:
     - nis
     - ntpdate
 #  perm:
+#    rerun_policy: always
+#    86400 = 1 day
+#    rerun_interval: 86400
+#    paths:
 #    -
 #      path: '/boot/System.map-*'
 #      owner: 'root'
