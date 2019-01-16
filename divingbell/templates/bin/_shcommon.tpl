@@ -59,7 +59,8 @@ __text_formatter(){
   if [ -n "${color_prefix}" ]; then
     color_suffix='\e[0m'
   fi
-  echo -e "${color_prefix}${log_prefix}${1}${color_suffix}" >&${fd}
+  timestamp=$(date "+%m-%d-%y %H:%M:%S")
+  echo -e "${color_prefix}${timestamp} ${log_prefix}${1}${color_suffix}" >&${fd}
 }
 # Due to this unresolved issue: http://bit.ly/2xPmOY9 we choose preservation of
 # message ordering at the expense of applying appropriate tags to stderr. As a
