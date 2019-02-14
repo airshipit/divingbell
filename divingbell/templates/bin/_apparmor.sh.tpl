@@ -121,14 +121,11 @@ for filename in ${!CURRENT_FILENAMES[@]}; do
   $load_cmd ${persist_path}/${filename} || die "Problem loading ${persist_path}/${filename}"
 done
 
-exit 0
+log.INFO 'Putting the daemon to sleep.'
 EOF
 
 chmod 755 {{ .Values.conf.chroot_mnt_path | quote }}/tmp/apparmor_host.sh
 chroot {{ .Values.conf.chroot_mnt_path | quote }} /tmp/apparmor_host.sh
-
-sleep 1
-echo 'INFO Putting the daemon to sleep.'
 
 while [ 1 ]; do
   sleep 300

@@ -197,16 +197,14 @@ if [[ $hash_check = pass ]] && [[ $interval_check = pass ]]; then
 fi
 
 echo 0 > "${hash}/exit_code"
-exit 0
 {{- end}}
+log.INFO 'Putting the daemon to sleep for {{ $perm_loop_sleep_interval }} seconds.'
 EOF
 
 chmod 755 {{ .Values.conf.chroot_mnt_path | quote }}/tmp/perm_host.sh
 
 while true; do
   chroot {{ .Values.conf.chroot_mnt_path | quote }} /tmp/perm_host.sh
-  sleep 2
-  echo 'INFO Putting the daemon to sleep.'
   sleep {{ $perm_loop_sleep_interval }}
 done
 

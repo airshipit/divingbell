@@ -230,14 +230,11 @@ else
   log.WARN 'No uamlite overrides defined for this node.'
 fi
 
-exit 0
+log.INFO 'Putting the daemon to sleep.'
 EOF
 
 chmod 755 {{ .Values.conf.chroot_mnt_path | quote }}/tmp/uamlite_host.sh
 chroot {{ .Values.conf.chroot_mnt_path | quote }} /tmp/uamlite_host.sh
-
-sleep 1
-echo 'INFO Putting the daemon to sleep.'
 
 while [ 1 ]; do
   sleep 300
