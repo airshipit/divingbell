@@ -49,7 +49,9 @@ spec:
           subPath: {{ $daemonset }}
           readOnly: true
         securityContext:
-          privileged: true
+          capabilities:
+            add:
+              - 'MAC_ADMIN'
       volumes:
       - name: rootfs-{{ $daemonset }}
         hostPath:

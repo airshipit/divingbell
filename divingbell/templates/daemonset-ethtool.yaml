@@ -51,7 +51,9 @@ spec:
           subPath: {{ $daemonset }}
           readOnly: true
         securityContext:
-          privileged: true
+          capabilities:
+            add:
+              - 'NET_ADMIN'
       volumes:
       - name: rootfs-{{ $daemonset }}
         hostPath:
