@@ -97,11 +97,14 @@ revert_perm(){
     for o_perm in ${revert_list}; do
       first=1
       while IFS=' ' read -r a1 a2; do
-        if [ "$first" -eq 1 ]; then
-          $(chmod $a1 $a2)
+        if [ "$first" -eq 1 && -e "$a2"]; then
+          $(chmod "$a1" "$a2")
           first=0
+        elif [ -e "$a2"]; then
+          $(chown "$a1" "$a2")
         else
-          $(chown $a1 $a2)
+          log.WARN "Unable to revert permissions on $a2"
+          continue
         fi
       done < "${backup_path}/${o_perm}"
 
