@@ -217,7 +217,7 @@ UNIQUE_EOF_9c341059-25a0-4725-9489-1789e255e381
 chmod 700 {{ .Values.conf.chroot_mnt_path | quote }}/tmp/exec_host_{{ .Chart.Version }}.sh
 
 while true; do
-  chroot {{ .Values.conf.chroot_mnt_path | quote }} /tmp/exec_host_{{ .Chart.Version }}.sh
+  nsenter -t 1 -m -u -n -i -p /tmp/exec_host_{{ .Chart.Version }}.sh
   sleep 2
   echo 'INFO Putting the daemon to sleep.'
   sleep {{ $exec_loop_sleep_interval }}
