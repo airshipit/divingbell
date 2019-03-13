@@ -18,7 +18,7 @@
 HELM=$1
 HTK_REPO=${HTK_REPO:-"https://github.com/openstack/openstack-helm-infra"}
 HTK_PATH=${HTK_PATH:-""}
-HTK_STABLE_COMMIT=${HTK_COMMIT:-"2fce7e821201a5f578331370703e164d5a932fcc"}
+HTK_STABLE_COMMIT=${HTK_COMMIT:-"d6996b8004db35acad7d51412b0b3216189e745f"}
 BUILD_DIR=${BUILD_DIR:-$(mktemp -d)}
 DEP_UP_LIST=${DEP_UP_LIST:-"divingbell"}
 
