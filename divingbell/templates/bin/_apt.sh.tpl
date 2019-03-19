@@ -54,10 +54,43 @@ load_package_list_with_versions $(dpkg -l | awk 'NR>5 {print $2"="$3}')
 
 ################################################
 #Stage 2
-#Install new packages
+#Add repositories and install new packages
 ################################################
 
 {{- if hasKey .Values.conf "apt" }}
+{{- if hasKey .Values.conf.apt "repositories" }}
+  {{- $repository := list }}
+echo -n "" > /etc/apt/trusted.gpg.d/divindbell_temp.gpg
+  {{- range .Values.conf.apt.repositories }}
+    {{- $url := .url }}
+    {{- $components := .components | join " " }}
+    {{- $subrepos := .subrepos | default list }}
+    {{- range .distributions }}
+      {{- $distribution := . }}
+      {{- $repository = append $repository ( printf "deb %s %s %s" $url $distribution $components ) }}
+      {{- if $subrepos }}
+        {{- range $subrepos }}
+          {{- $repository = append $repository ( printf "deb %s %s-%s %s" $url $distribution . $components ) }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- if hasKey . "gpgkey" }}
+apt-key --keyring /etc/apt/trusted.gpg.d/divindbell_temp.gpg add - <<"ENDKEY"
+{{ .gpgkey }}
+ENDKEY
+    {{- end }}
+  {{- end }}
+echo "#The list of repositories managed by Divingbell" > /etc/apt/sources.list.divingbell
+  {{- range $repository }}
+echo "{{ . }}" >>/etc/apt/sources.list.divingbell
+  {{- end }}
+mv /etc/apt/sources.list.divingbell /etc/apt/sources.list
+rm -rf /etc/apt/sources.list.d/*
+mv /etc/apt/trusted.gpg.d/divindbell_temp.gpg /etc/apt/trusted.gpg.d/divindbell.gpg
+rm -f /etc/apt/trusted.gpg
+find /etc/apt/trusted.gpg.d/ -type f ! -name 'divindbell.gpg' -exec rm {{ "{}" }} \;
+apt-get update
+{{- end }}
 {{- if hasKey .Values.conf.apt "packages" }}
 apt-get update
 

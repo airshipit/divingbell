@@ -55,6 +55,191 @@ APT_VERSION3=3.8.1-1ubuntu2
 APT_PACKAGE4=less
 APT_PACKAGE5=python-setuptools
 APT_PACKAGE6=telnetd
+APT_REPOSITORY1="http://us.archive.ubuntu.com/ubuntu/"
+APT_DISTRIBUTIONS1="[ xenial ]"
+APT_COMPONENTS1="[ main, universe, restricted, multiverse ]"
+APT_SUBREPOS1="[ backports, updates ]"
+APT_GPGKEYID1="437D05B5"
+APT_GPGKEY1="-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: GnuPG v1
+
+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
+Twx6DKLF+3rF5nf1F3Q=
+=PBAe
+-----END PGP PUBLIC KEY BLOCK-----"
+APT_REPOSITORY2="http://security.ubuntu.com/ubuntu/"
+APT_DISTRIBUTIONS2="[ xenial ]"
+APT_COMPONENTS2="[ main, universe, restricted, multiverse ]"
+APT_SUBREPOS2="[ security ]"
+APT_GPGKEYID2="C0B21F32"
+APT_GPGKEY2="-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: GnuPG v1
+
+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
+DjfegedFClqpn37b
+=rDTH
+-----END PGP PUBLIC KEY BLOCK-----"
+APT_REPOSITORY3="https://download.ceph.com/debian-mimic/"
+APT_DISTRIBUTIONS3="[ xenial ]"
+APT_COMPONENTS3="[ main ]"
+APT_GPGKEYID3="460F3994"
+APT_GPGKEY3="-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: GnuPG v1
+
+mQINBFX4hgkBEADLqn6O+UFp+ZuwccNldwvh5PzEwKUPlXKPLjQfXlQRig1flpCH
+E0HJ5wgGlCtYd3Ol9f9+qU24kDNzfbs5bud58BeE7zFaZ4s0JMOMuVm7p8JhsvkU
+C/Lo/7NFh25e4kgJpjvnwua7c2YrA44ggRb1QT19ueOZLK5wCQ1mR+0GdrcHRCLr
+7Sdw1d7aLxMT+5nvqfzsmbDullsWOD6RnMdcqhOxZZvpay8OeuK+yb8FVQ4sOIzB
+FiNi5cNOFFHg+8dZQoDrK3BpwNxYdGHsYIwU9u6DWWqXybBnB9jd2pve9PlzQUbO
+eHEa4Z+jPqxY829f4ldaql7ig8e6BaInTfs2wPnHJ+606g2UH86QUmrVAjVzlLCm
+nqoGymoAPGA4ObHu9X3kO8viMBId9FzooVqR8a9En7ZE0Dm9O7puzXR7A1f5sHoz
+JdYHnr32I+B8iOixhDUtxIY4GA8biGATNaPd8XR2Ca1hPuZRVuIiGG9HDqUEtXhV
+fY5qjTjaThIVKtYgEkWMT+Wet3DPPiWT3ftNOE907e6EWEBCHgsEuuZnAbku1GgD
+LBH4/a/yo9bNvGZKRaTUM/1TXhM5XgVKjd07B4cChgKypAVHvef3HKfCG2U/DkyA
+LjteHt/V807MtSlQyYaXUTGtDCrQPSlMK5TjmqUnDwy6Qdq8dtWN3DtBWQARAQAB
+tCpDZXBoLmNvbSAocmVsZWFzZSBrZXkpIDxzZWN1cml0eUBjZXBoLmNvbT6JAjgE
+EwECACIFAlX4hgkCGwMGCwkIBwMCBhUIAgkKCwQWAgMBAh4BAheAAAoJEOhKwsBG
+DzmUXdIQAI8YPcZMBWdv489q8CzxlfRIRZ3Gv/G/8CH+EOExcmkVZ89mVHngCdAP
+DOYCl8twWXC1lwJuLDBtkUOHXNuR5+Jcl5zFOUyldq1Hv8u03vjnGT7lLJkJoqpG
+l9QD8nBqRvBU7EM+CU7kP8+09b+088pULil+8x46PwgXkvOQwfVKSOr740Q4J4nm
+/nUOyTNtToYntmt2fAVWDTIuyPpAqA6jcqSOC7Xoz9cYxkVWnYMLBUySXmSS0uxl
+3p+wK0lMG0my/gb+alke5PAQjcE5dtXYzCn+8Lj0uSfCk8Gy0ZOK2oiUjaCGYN6D
+u72qDRFBnR3jaoFqi03bGBIMnglGuAPyBZiI7LJgzuT9xumjKTJW3kN4YJxMNYu1
+FzmIyFZpyvZ7930vB2UpCOiIaRdZiX4Z6ZN2frD3a/vBxBNqiNh/BO+Dex+PDfI4
+TqwF8zlcjt4XZ2teQ8nNMR/D8oiYTUW8hwR4laEmDy7ASxe0p5aijmUApWq5UTsF
++s/QbwugccU0iR5orksM5u9MZH4J/mFGKzOltfGXNLYI6D5Mtwrnyi0BsF5eY0u6
+vkdivtdqrq2DXY+ftuqLOQ7b+t1RctbcMHGPptlxFuN9ufP5TiTWSpfqDwmHCLsT
+k2vFiMwcHdLpQ1IH8ORVRgPPsiBnBOJ/kIiXG2SxPUTjjEGOVgeA
+=/Tod
+-----END PGP PUBLIC KEY BLOCK-----"
+#deb https://download.ceph.com/debian-mimic/ xenial main
 EXEC_DIR=/var/${NAME}/exec
 # this used in test_overrides to check amount of daemonsets defined
 EXPECTED_NUMBER_OF_DAEMONSETS=17
@@ -940,6 +1125,40 @@ _test_apt_package_version(){
   fi
 }
 
+_test_apt_repositories(){
+  local repositories=$1
+  local remaining_repos
+  for repository in $repositories
+  do
+    if ! grep -qrh "$repository" /etc/apt/sources.list /etc/apt/sources.list.d/*
+    then
+      echo "[FAIL] The repository (${repository}) was not added."
+      #return 1
+    fi
+  done
+  remaining_repos=$(grep -rh "^deb" /etc/apt/sources.list /etc/apt/sources.list.d/* | sort -u | grep -v "${repositories// /\\|}" | awk '{print$2}')
+  for repo in $remaining_repos
+  do
+    echo "[FAIL] Repository ${repo} should not be added."
+  done
+}
+
+_test_apt_keys(){
+  local keys=$1
+  for key in $keys
+  do
+    if ! apt-key list | grep -q "$key"
+    then
+      echo "[FAIL] The gpg key (${key}) was not installed"
+    fi
+  done
+  remaining_keys=$(apt-key list | grep "^pub" | grep -v "${keys// /\\|}" | awk '{print$2}')
+  for rkey in $remaining_keys
+  do
+    echo "[FAIL] The gpg key (${rkey}) should not be installed"
+  done
+}
+
 test_apt(){
   # Test the valid set of packages
   local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
@@ -1031,6 +1250,63 @@ test_apt(){
   get_container_status apt
   _test_apt_package_version $APT_PACKAGE6 none
   echo '[SUCCESS] apt test6 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test add several repositories with gpg keys
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set5.yaml
+  echo "conf:
+  apt:
+    repositories:
+      repository_name1:
+        url: $APT_REPOSITORY1
+        distributions: $APT_DISTRIBUTIONS1
+        components: $APT_COMPONENTS1
+        subrepos: $APT_SUBREPOS1
+        gpgkey: |-
+$(printf '%s' "$APT_GPGKEY1" | awk '{printf "          %s\n", $0}')
+      repository_name2:
+        url: $APT_REPOSITORY2
+        distributions: $APT_DISTRIBUTIONS2
+        components: $APT_COMPONENTS2
+        subrepos: $APT_SUBREPOS2
+        gpgkey: |-
+$(printf '%s' "$APT_GPGKEY2" | awk '{printf "          %s\n", $0}')
+      repository_name3:
+        url: $APT_REPOSITORY3
+        distributions: $APT_DISTRIBUTIONS3
+        components: $APT_COMPONENTS3
+        subrepos: $APT_SUBREPOS3
+        gpgkey: |-
+$(printf '%s' "$APT_GPGKEY3" | awk '{printf "          %s\n", $0}')" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apt
+  _test_apt_repositories "$APT_REPOSITORY1 $APT_REPOSITORY2 $APT_REPOSITORY3"
+  _test_apt_keys "$APT_GPGKEYID1 $APT_GPGKEYID2 $APT_GPGKEYID3"
+  echo '[SUCCESS] apt test7 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test add same gpg key two times
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set6.yaml
+  echo "conf:
+  apt:
+    repositories:
+      repository_name1:
+        url: $APT_REPOSITORY1
+        distributions: $APT_DISTRIBUTIONS1
+        components: $APT_COMPONENTS1
+        subrepos: $APT_SUBREPOS1
+        gpgkey: |-
+$(printf '%s' "$APT_GPGKEY1" | awk '{printf "          %s\n", $0}')
+      repository_name2:
+        url: $APT_REPOSITORY2
+        distributions: $APT_DISTRIBUTIONS2
+        components: $APT_COMPONENTS2
+        subrepos: $APT_SUBREPOS2
+        gpgkey: |-
+$(printf '%s' "$APT_GPGKEY1" | awk '{printf "          %s\n", $0}')" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apt
+  _test_apt_repositories "$APT_REPOSITORY1 $APT_REPOSITORY2"
+  _test_apt_keys "$APT_GPGKEYID1"
+  echo '[SUCCESS] apt test8 passed successfully' >> "${TEST_RESULTS}"
 }
 
 # test exec module
