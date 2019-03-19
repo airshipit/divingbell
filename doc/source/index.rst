@@ -14,246 +14,52 @@
       License for the specific language governing permissions and limitations
       under the License.
 
-Divingbell
-==========
-
-Divingbell is a lightweight solution for:
-
-1. Bare metal configuration management for a few very targeted use cases
-2. Bare metal package manager orchestration
-
-What problems does it solve?
-----------------------------
-
-The needs identified for Divingbell were:
-
-1. To plug gaps in day 1 tools (e.g., Drydock) for node configuration
-2. To provide a day 2 solution for managing these configurations going forward
-3. [Future] To provide a day 2 solution for system level host patching
+.. include:: ../../README.rst
+  :end-before: include-marker
 
 Design and Implementation
--------------------------
+=========================
 
-Divingbell daemonsets run as privileged containers which mount the host
+Divingbell DaemonSets run as privileged containers which mount the host
 filesystem and chroot into that filesystem to enforce configuration and package
-state. (The `diving bell <http://bit.ly/2hSXlai>`_ analogue can be thought of as something that descends
-into the deeps to facilitate work done down below the surface.)
+state, or executes scripts in a namespace of ``systemd`` (PID=1). (The
+`diving bell <http://bit.ly/2hSXlai>`_ analogue can be thought of as something
+that descends into the deeps to facilitate work done down below the surface).
 
-We use the daemonset construct as a way of getting a copy of each pod on every
+We use the DaemonSet construct as a way of getting a copy of each pod on every
 node, but the work done by this chart's pods behaves like an event-driven job.
 In practice this means that the chart internals run once on pod startup,
 followed by an infinite sleep such that the pods always report a "Running"
-status that k8s recognizes as the healthy (expected) result for a daemonset.
+status that k8s recognizes as the healthy (expected) result for a DaemonSet.
 
 In order to keep configuration as isolated as possible from other systems that
-manage common files like /etc/fstab and /etc/sysctl.conf, Divingbell daemonsets
-manage all of their configuration in separate files (e.g. by writing unique
-files to /etc/sysctl.d or defining unique Systemd units) to avoid potential
-conflicts. Another example is limit management, Divingbell daemonset writes
-separate files to /etc/security/limits.d.
+manage common files like ``/etc/fstab`` and ``/etc/sysctl.conf``, Divingbell
+DaemonSets manage all of their configuration in separate files (e.g. by writing
+unique files to ``/etc/sysctl.d`` or defining unique Systemd units) to avoid
+potential conflicts. Another example is ``limits`` management, where Divingbell
+DaemonSets write separate files to ``/etc/security/limits.d``.
 
-To maximize robustness and utility, the daemonsets in this chart are made to be
+To maximize robustness and utility, the DaemonSets in this chart are made to be
 idempotent. In addition, they are designed to implicitly restore the original
 system state after previously defined states are undefined. (e.g., removing a
 previously defined mount from the yaml manifest, with no record of the original
 mount in the updated manifest).
 
 Lifecycle management
---------------------
+====================
 
-This chart's daemonsets will be spawned by Armada. They run in an event-driven
-fashion: the idempotent automation for each daemonset will only re-run when
+This chart's DaemonSets will be spawned by `Armada`_. They run in an event-driven
+fashion: the idempotent automation for each DaemonSet only re-runs when
 Armada spawns/respawns the container, or if information relevant to the host
 changes in the configmap.
 
-Daemonset configs
------------------
-
-sysctl
-^^^^^^
-
-Used to manage host level sysctl tunables. Ex::
-
-    conf:
-      sysctl:
-        net/ipv4/ip_forward: 1
-        net/ipv6/conf/all/forwarding: 1
-
-limits
-^^^^^^
-
-Used to manage host level limits. Ex::
-
-  conf:
-    limits:
-      nofile:
-        domain: 'root'
-        type: 'soft'
-        item: 'nofile'
-        value: '101'
-      core_dump:
-        domain: '0:'
-        type: 'hard'
-        item: 'core'
-        value: 0
-
-Previous values of newly set limits are backed up to /var/divingbell/limits
-
-
-mounts
-^^^^^^
-
-used to manage host level mounts (outside of those in /etc/fstab). Ex::
-
-    conf:
-      mounts:
-        mnt:
-          mnt_tgt: /mnt
-          device: tmpfs
-          type: tmpfs
-          options: 'defaults,noatime,nosuid,nodev,noexec,mode=1777,size=1024M'
-
-ethtool
-^^^^^^^
-
-Used to manage host level NIC tunables. Ex::
-
-    conf:
-      ethtool:
-        ens3:
-          tx-tcp-segmentation: off
-          tx-checksum-ip-generic: on
-
-uamlite
-^^^^^^^
-
-Used to manage host level local user accounts, their SSH keys, and their sudo
-access. Ex::
-
-    conf:
-      uamlite:
-        purge_expired_users: false
-        users:
-        - user_name: testuser
-          user_crypt_passwd: $6$...
-          user_sudo: true
-          user_sshkeys:
-          - ssh-rsa AAAAB3N... key1-comment
-          - ssh-rsa AAAAVY6... key2-comment
-
-apt
-^^^
-
-``apt`` daemonset does package management. It is able to install a package of
-a specific version (or upgrade an existing one to requested version). Version
-is optional, and if not provided the latest available package is installed.
-It can also remove packages that were previously installed by divingbell (it is
-done by excluding the packages you want to remove from the configuration).
-Here is an example configuration for it::
-
-    conf:
-      apt:
-        packages:
-        - name: <PACKAGE1>
-          version: <VERSION1>
-        - name: <PACKAGE2>
-
-It is also possible to provide debconf settings for packages the following
-way::
-
-    conf:
-      apt:
-        packages:
-        - name: openssh-server
-          debconf:
-          - question: openssh-server/permit-root-login
-            question_type: boolean
-            answer: false
-
-exec
-^^^^
-
-Used to execute scripts on nodes, ex::
-
-    exec:
-      002-script2.sh:
-        data: |
-          #!/bin/bash
-          echo ${BASH_SOURCE}
-      001-script1.sh:
-        blocking_policy: foreground_halt_pod_on_failure
-        env:
-          env1: env1-val
-          env2: env2-val
-        args:
-        - arg1
-        - arg2
-        data: |
-          #!/bin/bash
-          echo script name: ${BASH_SOURCE}
-          echo args: $@
-          echo env: $env1 $env2 $env3
-
-Scripts are executed in alphanumeric order with the key names used. Therefore
-in this example, 001-script1.sh runs first, followed by 002-script2.sh.
-Targeting of directives to specific nodes by hostname or node label is
-achievable by use of the overrides capability described below.
-
-The following set of options are fully implemeneted::
-
-    ``rerun_policy`` may be optionally set to ``always``, ``never``, or
-    ``once_successfully`` for a given script. That script would always be rerun,
-    never be rerun, or rerun until the first successful execution respectively.
-    Default value is ``always``. This is tracked via a hash of the dict object
-    for the script (i.e. script name, script data, script args, script env, etc).
-    If any of that info changes, so will the hash, and it will be seen as a new
-    object which will be executed regardless of this setting.
-
-    ``script_timeout`` may optionally be set to the number of seconds to wait for
-    script completion before termination. Default value is ``1800`` (30 min).
-
-    ``rerun_interval`` may be optionally set to the number of seconds to wait
-    between rerunning a given script which ran successfully the previous time.
-    Default value is ``infinite``.
-
-    ``retry_interval`` may be optionally set to the number of seconds to wait
-    between rerunning a given script which did not run successfully the previous
-    time. Default behavior is to match the ``rerun_interval``.
-
-The following set of options are partially implemeneted::
-
-    ``blocking_policy`` may optionally be set to ``background``, ``foreground``,
-    or ``foreground_halt_pod_on_failure`` for a given script. This may be used to
-    run a script in the background (running in parallel, i.e. non-blocking) or
-    in the foreground (blocking). In either case, a failure of the script does
-    not cause a failure (crashloop) of the pod. The third option may be used
-    where the reverse behavior is desired (i.e., it would not proceed with
-    running the next script in the sequence until the current script ran
-    successfully). ``background`` option is not yet implemeneted. Default value
-    Deafult value is ``foreground``.
-
-The following set of options are not yet implemeneted::
-
-    ``rerun_interval_persist`` may be optionally set to ``false`` for a given
-    script. This makes the script execute on pod/node startup regardless of the
-    interval since the last successful execution. Default value is ``true``.
-
-    ``rerun_max_count`` may be optionally set to the maximum number of times a
-    succeeding script should be retried. Successful exec count does not persist
-    through pod/node restart. Default value is ``infinite``.
-
-    ``retry_interval_persist`` may be optionally set to ``false`` for a given
-    script. This makes the script execute on pod/node startup, regardless of the
-    time since the last execution. Default value is ``true``.
-
-    ``retry_max_count`` may be optionally set to the maximum number of times a
-    failing script should be retried. Failed exec count does not persist
-    through pod/node restart. Default value is ``infinite``.
+DaemonSet configs
+=================
 
 apparmor
-^^^^^^^^
+--------
 
-Used to manage host level apparmor profiles/rules, Ex::
+Used to manage host level apparmor profiles/rules. Ex.::
 
     conf:
       apparmor:
@@ -292,15 +98,219 @@ Used to manage host level apparmor profiles/rules, Ex::
                 deny /data/www/unsafe/* r,
               }
 
+apt
+---
+
+``apt`` DaemonSet does package management. It is able to install a package of
+a specific version (or upgrade an existing one to requested version). Version
+is optional, and if not provided, the latest available package is installed.
+It can also remove packages that were previously installed by divingbell (it is
+done by excluding the packages you want to remove from the configuration).
+Here is an example configuration for it::
+
+    conf:
+      apt:
+        packages:
+        - name: <PACKAGE1>
+          version: <VERSION1>
+        - name: <PACKAGE2>
+
+There is a possibility to blacklist packages, e.g. ``telnetd`` and ``nis``::
+
+    conf:
+      apt:
+        blacklistpkgs:
+        - name: telnetd
+        - name: nis
+
+It is also possible to provide ``debconf`` settings for packages the following
+way::
+
+    conf:
+      apt:
+        packages:
+        - name: openssh-server
+          debconf:
+          - question: openssh-server/permit-root-login
+            question_type: boolean
+            answer: false
+
+ethtool
+-------
+
+Used to manage host level NIC tunables. Ex.::
+
+    conf:
+      ethtool:
+        ens3:
+          tx-tcp-segmentation: off
+          tx-checksum-ip-generic: on
+
+exec
+----
+
+Used to execute scripts on nodes in ``systemd`` (PID=1) namespace, for ex.::
+
+    exec:
+      002-script2.sh:
+        data: |
+          #!/bin/bash
+          echo ${BASH_SOURCE}
+      001-script1.sh:
+        blocking_policy: foreground_halt_pod_on_failure
+        env:
+          env1: env1-val
+          env2: env2-val
+        args:
+        - arg1
+        - arg2
+        data: |
+          #!/bin/bash
+          echo script name: ${BASH_SOURCE}
+          echo args: $@
+          echo env: $env1 $env2 $env3
+
+Scripts are executed in alphanumeric order with the key names used. Therefore
+in this example, ``001-script1.sh`` runs first, followed by ``002-script2.sh``.
+Targeting of directives to specific nodes by hostname or node label is
+achievable by the use of the overrides capability described below.
+
+The following set of options is fully implemeneted:
+
+  - ``rerun_policy`` may optionally be set to ``always``, ``never``, or
+    ``once_successfully`` for a given script. That script would always be rerun,
+    never be rerun, or rerun until the first successful execution respectively.
+    Default value is ``always``. This is tracked via a hash of the dict object
+    for the script (i.e. script name, script data, script args, script env, etc).
+    If any of that info changes, so will the hash, and it will be seen as a new
+    object which will be executed regardless of this setting.
+  - ``script_timeout`` may optionally be set to the number of seconds to wait for
+    script completion before termination. Default value is ``1800`` (30 min).
+  - ``rerun_interval`` may optionally be set to the number of seconds to wait
+    between rerunning a given script which ran successfully the previous time.
+    Default value is ``infinite``.
+  - ``retry_interval`` may optionally be set to the number of seconds to wait
+    between rerunning a given script which did not run successfully the previous
+    time. Default behavior is to match the ``rerun_interval``.
+
+The following set of options is partially implemeneted:
+
+  - ``blocking_policy`` may optionally be set to ``background``, ``foreground``,
+    or ``foreground_halt_pod_on_failure`` for a given script. This may be used to
+    run a script in the background (running in parallel, i.e. non-blocking) or
+    in the foreground (blocking). In either case, a failure of the script does
+    not cause a failure (CrashLoop) of the pod. The third option may be used
+    where the reverse behavior is desired (i.e., it would not proceed with
+    running the next script in the sequence until the current script ran
+    successfully). ``background`` option is not yet implemeneted. Default value
+    is ``foreground``.
+
+The following set of options is not yet implemeneted:
+
+  - ``rerun_interval_persist`` may optionally be set to ``false`` for a given
+    script. This makes the script execute on pod/node startup regardless of the
+    interval since the last successful execution. Default value is ``true``.
+  - ``rerun_max_count`` may optionally be set to the maximum number of times a
+    succeeding script should be retried. Successful exec count does not persist
+    through pod/node restart. Default value is ``infinite``.
+  - ``retry_interval_persist`` may optionally be set to ``false`` for a given
+    script. This makes the script execute on pod/node startup, regardless of the
+    time since the last execution. Default value is ``true``.
+  - ``retry_max_count`` may optionally be set to the maximum number of times a
+    failing script should be retried. Failed exec count does not persist
+    through pod/node restart. Default value is ``infinite``.
+
+limits
+------
+
+Used to manage host level limits. Ex.::
+
+  conf:
+    limits:
+      nofile:
+        domain: 'root'
+        type: 'soft'
+        item: 'nofile'
+        value: '101'
+      core_dump:
+        domain: '0:'
+        type: 'hard'
+        item: 'core'
+        value: 0
+
+Previous values of newly set limits are backed up to ``/var/divingbell/limits``.
+
+mounts
+------
+
+Used to manage host level mounts (outside of those in ``/etc/fstab``). Ex.::
+
+    conf:
+      mounts:
+        mnt:
+          mnt_tgt: /mnt
+          device: tmpfs
+          type: tmpfs
+          options: 'defaults,noatime,nosuid,nodev,noexec,mode=1777,size=1024M'
+
+perm
+----
+
+Used to manage permissions. Ex.::
+
+    conf:
+      perms:
+        -
+          path: '/etc/shadow'
+          owner: 'root'
+          group: 'shadow'
+          permissions: '0640'
+        -
+          path: '/etc/passwd'
+          owner: 'root'
+          group: 'root'
+          permissions: '0644'
+
+Module supports ``rerun_policy`` and ``rerun_interval`` options (like in
+``exec`` module). Previous values of newly set permissions are backed up to
+``/var/divingbell/perm``.
+
+sysctl
+------
+
+Used to manage host level sysctl tunables. Ex.::
+
+    conf:
+      sysctl:
+        net/ipv4/ip_forward: 1
+        net/ipv6/conf/all/forwarding: 1
+
+uamlite
+-------
+
+Used to manage host level local user accounts, their SSH keys, and their sudo
+access. Ex.::
+
+    conf:
+      uamlite:
+        purge_expired_users: false
+        users:
+        - user_name: testuser
+          user_crypt_passwd: $6$...
+          user_sudo: true
+          user_sshkeys:
+          - ssh-rsa AAAAB3N... key1-comment
+          - ssh-rsa AAAAVY6... key2-comment
+
 Operations
-----------
+==========
 
 Setting apparmor profiles
-^^^^^^^^^^^^^^^^^^^^^^^^^
+-------------------------
 
 The way apparmor loading/unloading implemented is through saving
 settings to a file and than running ``apparmor_parser`` command.
-The daemonset supports both enforcement and complain mode,
+The DaemonSet supports both enforcement and complain mode,
 enforcement being the default. To request complain mode for the
 profiles, add ``complain_mode: "true"`` nested under apparmor entry.
 
@@ -330,7 +340,7 @@ net_bind_service), but not both. Such problems are hard to debug, so
 caution needed while setting configs up.
 
 Setting user passwords
-^^^^^^^^^^^^^^^^^^^^^^
+----------------------
 
 Including ``user_crypt_passwd`` to set a user password is optional.
 
@@ -352,7 +362,7 @@ network access is unavailable, console username/password access will be the only
 login option.
 
 Setting user sudo
-^^^^^^^^^^^^^^^^^
+-----------------
 
 Including ``user_sudo`` to set user sudo access is optional. The default value
 is ``false``.
@@ -361,7 +371,7 @@ At least one user must be defined with sudo access in order for the built-in
 ``ubuntu`` account to be disabled.
 
 SSH keys
-^^^^^^^^
+--------
 
 Including ``user_sshkeys`` for defining one or more user SSH keys is optional.
 
@@ -380,7 +390,7 @@ At least one user must be defined with an SSH key and sudo in order for the
 built-in ``ubuntu`` account to be disabled.
 
 Purging expired users
-^^^^^^^^^^^^^^^^^^^^^
+---------------------
 
 Including the ``purge_expired_users`` key-value pair is optional. The default
 value is ``false``.
@@ -392,23 +402,23 @@ maintain UID consistency (in the event the same accounts gets re-added later,
 they regain access to their home directory files without UID mismatching).
 
 Node specific configurations
-----------------------------
+============================
 
-Although we expect these daemonsets to run indiscriminately on all nodes in the
+Although we expect these DaemonSets to run indiscriminately on all nodes in the
 infrastructure, we also expect that different nodes will need to be given a
 different set of data depending on the node role/function. This chart supports
 establishing value overrides for nodes with specific label value pairs and for
 targeting nodes with specific hostnames. The overridden configuration is merged
 with the normal config data, with the override data taking precedence.
 
-The chart will then generate one daemonset for each host and label override, in
-addition to a default daemonset for which no overrides are applied.
-Each daemonset generated will also exclude from its scheduling criteria all
-other hosts and labels defined in other overrides for the same daemonset, to
-ensure that there is no overlap of daemonsets (i.e., one and only one daemonset
+The chart will then generate one DaemonSet for each host and label override, in
+addition to a default DaemonSet for which no overrides are applied.
+Each DaemonSet generated will also exclude from its scheduling criteria all
+other hosts and labels defined in other overrides for the same DaemonSet, to
+ensure that there is no overlap of DaemonSets (i.e., one and only one DaemonSet
 of a given type for each node).
 
-Overrides example with sysctl daemonset::
+Overrides example with sysctl DaemonSet::
 
     conf:
       sysctl:
@@ -459,7 +469,8 @@ Caveats:
    contained both of the defined labels.
 
 Dev Environment with Vagrant
-----------------------------
+============================
+
 The point of Dev env to prepare working environment for development.
 
 Vagrantfile allows to run on working copy with modifications
@@ -471,6 +482,29 @@ but do not delete the pods and other stuff. You have:
 3. your not committed test runs in prepared env
 
 Recorded Demo
--------------
+=============
 
-A recorded demo of using Divingbell can be found `here <https://asciinema.org/a/beJQZpRPdOctowW0Lxkxrhz17>`_.
+Here are a few demo recording of Divingbell in action:
+
+- Divingbell limits module:
+  `link <https://asciinema.org/a/209619>`__,
+  `link <https://asciinema.org/a/211450>`__ (with overrides)
+- Divingbell sysctl module:
+  `link <https://asciinema.org/a/209667>`__,
+  `link <https://asciinema.org/a/211433>`__ (with overrides)
+- Divingbell perms module:
+  `link <https://asciinema.org/a/209509>`__,
+  `link <https://asciinema.org/a/213125>`__ (with overrides)
+
+Further Reading
+===============
+
+`Airship`_.
+
+.. |Doc Status| image:: https://readthedocs.org/projects/airship-divingbell/badge/?version=latest
+   :target: https://airship-divingbell.readthedocs.io/
+   :alt: Documentation Status
+.. _Read the Docs: https://airship-divingbell.readthedocs.io
+.. _Drydock: https://airship-drydock.readthedocs.io
+.. _Airship: https://www.airshipit.org
+.. _Armada: https://airship-armada.readthedocs.io

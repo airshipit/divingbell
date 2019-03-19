@@ -52,6 +52,7 @@ ChangeLog
 *~
 .*.swp
 .*sw?
+.vscode/
 
 # Files created by releasenotes build
 releasenotes/build
