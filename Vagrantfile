@@ -17,7 +17,7 @@ Vagrant.configure("2") do |config|
     node.vm.hostname = "dbtest"
     node.vm.provision :shell, inline: <<-SHELL
       #mkdir /root/deploy
-      #git clone git://git.openstack.org/openstack/airship-divingbell /root/deploy/airship-divingbell
+      #git clone https://git.airshipit.org/airship-divingbell /root/deploy/airship-divingbell
       git clone https://git.openstack.org/openstack/openstack-helm-infra /root/deploy/openstack-helm-infra
       cd /root/deploy/openstack-helm-infra
       ./tools/gate/devel/start.sh full
