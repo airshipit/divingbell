@@ -20,7 +20,7 @@
 Design and Implementation
 =========================
 
-Divingbell DaemonSets run as privileged containers which mount the host
+Divingbell DaemonSets mostly run as unprivileged containers which mount the host
 filesystem and chroot into that filesystem to enforce configuration and package
 state, or executes scripts in a namespace of ``systemd`` (PID=1). (The
 `diving bell <http://bit.ly/2hSXlai>`_ analogue can be thought of as something
