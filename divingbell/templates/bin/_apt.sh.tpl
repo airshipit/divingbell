@@ -59,18 +59,18 @@ load_package_list_with_versions $(dpkg -l | awk 'NR>5 {print $2"="$3}')
 
 {{- if hasKey .Values.conf "apt" }}
 {{- if hasKey .Values.conf.apt "repositories" }}
-  {{- $repository := list }}
 echo -n "" > /etc/apt/trusted.gpg.d/divindbell_temp.gpg
+echo "#The list of repositories managed by Divingbell" > /etc/apt/sources.list.divingbell
   {{- range .Values.conf.apt.repositories }}
     {{- $url := .url }}
     {{- $components := .components | join " " }}
     {{- $subrepos := .subrepos | default list }}
     {{- range .distributions }}
       {{- $distribution := . }}
-      {{- $repository = append $repository ( printf "deb %s %s %s" $url $distribution $components ) }}
+echo "{{ printf "deb %s %s %s" $url $distribution $components }}" >>/etc/apt/sources.list.divingbell
       {{- if $subrepos }}
         {{- range $subrepos }}
-          {{- $repository = append $repository ( printf "deb %s %s-%s %s" $url $distribution . $components ) }}
+echo "{{ printf "deb %s %s-%s %s" $url $distribution . $components }}" >>/etc/apt/sources.list.divingbell
         {{- end }}
       {{- end }}
     {{- end }}
@@ -79,10 +79,6 @@ apt-key --keyring /etc/apt/trusted.gpg.d/divindbell_temp.gpg add - <<"ENDKEY"
 {{ .gpgkey }}
 ENDKEY
     {{- end }}
-  {{- end }}
-echo "#The list of repositories managed by Divingbell" > /etc/apt/sources.list.divingbell
-  {{- range $repository }}
-echo "{{ . }}" >>/etc/apt/sources.list.divingbell
   {{- end }}
 mv /etc/apt/sources.list.divingbell /etc/apt/sources.list
 rm -rf /etc/apt/sources.list.d/*
