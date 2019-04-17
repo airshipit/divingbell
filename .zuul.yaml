@@ -23,9 +23,12 @@
               - ^.*\.rst$
               - ^doc/.*$
               - ^releasenotes/.*$
+        - airship-divingbell-chart-build-gate
+        - airship-divingbell-chart-build-latest-htk
     gate:
       jobs:
         - airship-divingbell-linter
+        - airship-divingbell-chart-build-gate
         # NOTE(portdirect): enable when voting enabled.
         # - airship-divingbell-ubuntu:
         #     irrelevant-files:
@@ -36,6 +39,23 @@
     name: airship-divingbell-linter
     run: tools/gate/playbooks/zuul-linter.yaml
     nodeset: openstack-helm-single-node
+
+- job:
+    name: airship-divingbell-chart-build-gate
+    description: Builds charts using pinned Helm toolkit.
+    timeout: 7200
+    run: ./tools/gate/playbooks/build-charts.yaml
+    nodeset: openstack-helm-single-node
+
+- job:
+    name: airship-divingbell-chart-build-latest-htk
+    description: Builds charts using latest Helm toolkit.
+    timeout: 7200
+    voting: false
+    run: ./tools/gate/playbooks/build-charts.yaml
+    nodeset: openstack-helm-single-node
+    vars:
+      HTK_COMMIT: master
 
 - job:
     name: airship-divingbell
