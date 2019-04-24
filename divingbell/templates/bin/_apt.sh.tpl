@@ -156,14 +156,11 @@ dpkg --configure -a
 apt-get autoremove -y
 {{- end }}
 
-exit 0
+log.INFO 'Putting the daemon to sleep.'
 EOF
 
 chmod 755 {{ .Values.conf.chroot_mnt_path | quote }}/tmp/apt.sh
 chroot {{ .Values.conf.chroot_mnt_path | quote }} /tmp/apt.sh
-
-sleep 1
-echo 'INFO Putting the daemon to sleep.'
 
 while [ 1 ]; do
   sleep 300

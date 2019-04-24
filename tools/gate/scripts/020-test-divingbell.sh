@@ -394,7 +394,7 @@ get_container_status(){
         echo "${CLOGS}"
         exit 1
       fi
-    elif [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *'INFO Putting the daemon to sleep.'* ]] ||
+    elif [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *'INFO Putting the daemon to sleep'* ]] ||
     [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *'DEBUG + exit 0'* ]]; then
       if [ "${2}" = 'expect_failure' ]; then
         echo 'Expected pod to die with error, but pod completed successfully'
