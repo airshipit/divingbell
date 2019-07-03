@@ -68,7 +68,7 @@
     roles:
       - zuul: openstack/openstack-helm-infra
     vars:
-      zuul_osh_infra_relative_path: ../openstack-helm-infra/
+      zuul_osh_infra_relative_path: ../../openstack/openstack-helm-infra/
     timeout: 7200
     pre-run:
       - tools/gate/playbooks/osh-infra-upgrade-host.yaml
