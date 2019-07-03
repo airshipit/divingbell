@@ -15,6 +15,7 @@
       - docs-on-readthedocs
     vars:
       rtd_webhook_id: '47940'
+      rtd_project_name: 'airship-divingbell'
     check:
       jobs:
         - airship-divingbell-linter
