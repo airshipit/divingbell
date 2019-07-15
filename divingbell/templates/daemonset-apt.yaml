@@ -48,6 +48,8 @@ spec:
           mountPath: /tmp/{{ $daemonset }}.sh
           subPath: {{ $daemonset }}
           readOnly: true
+        securityContext:
+          privileged: true
       volumes:
       - name: rootfs-{{ $daemonset }}
         hostPath:
