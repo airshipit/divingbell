@@ -23,6 +23,7 @@
               - ^.*\.rst$
               - ^doc/.*$
               - ^releasenotes/.*$
+            voting: false
         - airship-divingbell-chart-build-gate
         - airship-divingbell-chart-build-latest-htk
     gate:
