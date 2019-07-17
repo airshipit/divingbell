@@ -25,6 +25,7 @@ conf:
   chroot_mnt_path: '/mnt'
   log_colors: False
   apt:
+    upgrade: false
     blacklistpkgs:
     - telnetd
     - inetutils-telnetd

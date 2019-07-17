@@ -54,7 +54,7 @@ load_package_list_with_versions $(dpkg -l | awk 'NR>5 {print $2"="$3}')
 
 ################################################
 #Stage 2
-#Add repositories and install new packages
+#Add repositories and install/upgrade packages
 ################################################
 
 {{- if hasKey .Values.conf "apt" }}
@@ -111,6 +111,16 @@ if [[ "${CURRENT_PACKAGES[{{ .name | squote }}]+isset}" != "isset"{{- if .versio
 fi
 REQUESTED_PACKAGES="$REQUESTED_PACKAGES {{ .name }}"
 {{- end }}
+{{- end }}
+
+# Perform package upgrades
+{{- if .Values.conf.apt.upgrade }}
+DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get dist-upgrade \
+    -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold
+
+if [[ -f "/var/run/reboot-required" ]]; then
+  log.INFO 'System reboot REQUIRED.'
+fi
 {{- end }}
 {{- end }}
 

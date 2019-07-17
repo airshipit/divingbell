@@ -101,15 +101,23 @@ Used to manage host level apparmor profiles/rules. Ex.::
 apt
 ---
 
-``apt`` DaemonSet does package management. It is able to install a package of
-a specific version (or upgrade an existing one to requested version). Version
-is optional, and if not provided, the latest available package is installed.
-It can also remove packages that were previously installed by divingbell (it is
-done by excluding the packages you want to remove from the configuration).
+``apt`` DaemonSet does package management. It is able to install a package of a
+specific version, upgrade an existing one to requested version, and perform a
+full-system upgrade. Version is optional, and if not provided, the latest
+available package is installed.  It can also remove packages that were
+previously installed by divingbell (it is done by excluding the packages you
+want to remove from the configuration).
+
+.. NOTE::
+
+   When ``conf.apt.upgrade`` is ``true``, packages are upgraded `after` the
+   requested packages are installed.
+
 Here is an example configuration for it::
 
     conf:
       apt:
+        upgrade: false
         packages:
         - name: <PACKAGE1>
           version: <VERSION1>
