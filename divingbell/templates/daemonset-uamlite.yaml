@@ -50,6 +50,11 @@ spec:
           mountPath: /tmp/{{ $daemonset }}.sh
           subPath: {{ $daemonset }}
           readOnly: true
+        # adduser function hangs immediately on getent/useradd without security context
+        # TODO: investigate which linux capabilities should be whitelisted so blanket security
+        # context may be removed
+        securityContext:
+          privileged: true
       volumes:
       - name: rootfs-{{ $daemonset }}
         hostPath:
