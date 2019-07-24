@@ -154,7 +154,7 @@ purge_expired_users={{ .Values.conf.uamlite.purge_expired_users | squote }}
     {{ $key }}={{ $value | squote }} \
   {{- end }}
   {{- if hasKey . "user_sshkeys" }}
-  {{- if not (eq (first .user_sshkeys) "Unmanaged") }}
+  {{- if not (eq (first .user_sshkeys | default "Unmanaged") "Unmanaged") }}
   add_sshkeys {{ range $ssh_key := .user_sshkeys }}{{ if not (or (regexMatch "ssh-dss .*" $ssh_key) (regexMatch "ecdsa-.*" $ssh_key) (regexMatch "ssh-ed25519 .*" $ssh_key) (regexMatch "ssh-rsa .*" $ssh_key)) }}{{ fail (print "BAD SSH KEY FOR '" $item.user_name "': One of the 'user_sshkeys' specified for '" $item.user_name "' does not pass regex checks: '" $ssh_key "'. Ensure that the supplied user SSH keys are supported/formatted per divingbell documentation at https://airship-divingbell.readthedocs.io/#uamlite") }}{{ else }}{{ $ssh_key | squote }}{{ end }} {{ end }}
 {{- end }}
 {{- else }}
