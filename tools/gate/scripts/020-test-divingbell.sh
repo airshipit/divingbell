@@ -48,10 +48,12 @@ USERNAME3_SUDO=true
 USERNAME4=userfour
 USERNAME4_SUDO=false
 APT_PACKAGE1=python-pbr
-APT_VERSION1=1.8.0-4ubuntu1
+# Pick an available version in the package repo
+APT_VERSION1="$(apt-cache show $APT_PACKAGE1 | grep Version: | tail -1 | awk '{print $2}')"
 APT_PACKAGE2=mysql-server
 APT_PACKAGE3=python-simplejson
-APT_VERSION3=3.8.1-1ubuntu2
+# Pick an available version in the package repo
+APT_VERSION3="$(apt-cache show $APT_PACKAGE3 | grep Version: | tail -1 | awk '{print $2}')"
 APT_PACKAGE4=less
 APT_PACKAGE5=python-setuptools
 APT_PACKAGE6=telnetd
@@ -381,7 +383,7 @@ get_container_status(){
   local container_runtime_sleep_interval=5
   wait_time=0
   while : ; do
-    CLOGS="$(kubectl logs --namespace="${NAME}" "${container}" 2>&1)"
+    CLOGS="$(kubectl logs --namespace="${NAME}" "${container}" 2>&1)" || true
     local status="$(echo "${CLOGS}" | tail -1)"
     if [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *ERROR* ]] ||
        [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *TRACE* ]]; then
@@ -1869,9 +1871,21 @@ test_overrides(){
   echo '[SUCCESS] overrides test 6 passed successfully' >> "${TEST_RESULTS}" ||
   (echo '[FAILURE] overrides test 6 failed' && exit 1)
 
+  # The core functional test to ensure that overrides work.
+  # fooKey was added to catch a corner case identified by:
+  # https://storyboard.openstack.org/#!/story/2005936
+  # If fooHost keys are leaking into this host's values, then this test
+  # will fail when sysctl attempts to set the non-existant fooKey.
   overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-functional.yaml
   key1_override_val=0
   key2_non_override_val=0
+  kube_hostname="$(kubectl describe nodes | grep kubernetes.io/hostname | head -1 | cut -d'=' -f2)" || true
+  if [[ -z $kube_hostname ]]; then
+    fallback_kube_hostname=minikube
+    echo "[WARNING] Failed to get kubectl hostname, falling back to default $fallback_kube_hostname"
+    echo "This test will fail if the kubernetes.io/hostname does not map to the node running this instance of k8s."
+    kube_hostname="$fallback_kube_hostname"
+  fi
   echo "conf:
   sysctl:
     $SYSCTL_KEY1: 1
@@ -1879,13 +1893,18 @@ test_overrides(){
   overrides:
     divingbell_sysctl:
       hosts:
-      - name: $(hostname -f)
+      - name: fooHost
+        conf:
+          sysctl:
+            fooKey: fooVal
+      - name: $kube_hostname
         conf:
           sysctl:
             $SYSCTL_KEY1: $key1_override_val" > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
   get_container_status sysctl
-  _test_sysctl_default $SYSCTL_KEY1 $key1_override_val
+  _test_sysctl_default $SYSCTL_KEY1 $key1_override_val || \
+  (echo '[FAILURE] overrides test 7 failed, most likely someone broke openstack-helm-infra/helm-toolkit/templates/utils/_daemonset_overrides.tpl' && exit 1)
   _test_sysctl_default $SYSCTL_KEY2 $key2_non_override_val
   echo '[SUCCESS] overrides test 7 passed successfully' >> "${TEST_RESULTS}"
 

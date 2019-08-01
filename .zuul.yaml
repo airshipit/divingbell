@@ -23,19 +23,17 @@
               - ^.*\.rst$
               - ^doc/.*$
               - ^releasenotes/.*$
-            voting: false
         - airship-divingbell-chart-build-gate
         - airship-divingbell-chart-build-latest-htk
     gate:
       jobs:
         - airship-divingbell-linter
         - airship-divingbell-chart-build-gate
-        # NOTE(portdirect): enable when voting enabled.
-        # - airship-divingbell-ubuntu:
-        #     irrelevant-files:
-        #       - ^.*\.rst$
-        #       - ^doc/.*$
-        #       - ^releasenotes/.*$
+        - airship-divingbell-ubuntu:
+            irrelevant-files:
+              - ^.*\.rst$
+              - ^doc/.*$
+              - ^releasenotes/.*$
 
     post:
       jobs:
