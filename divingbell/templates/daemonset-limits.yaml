@@ -20,7 +20,7 @@
   {{- $envAll := index . 2 }}
   {{- with $envAll }}
 ---
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: {{ $daemonset }}
@@ -28,6 +28,9 @@ metadata:
     {{ tuple $envAll | include "helm-toolkit.snippets.release_uuid" }}
 spec:
 {{ tuple $envAll $daemonset | include "helm-toolkit.snippets.kubernetes_upgrades_daemonset" | indent 2 }}
+  selector:
+    matchLabels:
+{{ list $envAll .Chart.Name $daemonset | include "helm-toolkit.snippets.kubernetes_metadata_labels" | indent 6 }}
   template:
     metadata:
       labels:
