@@ -5,7 +5,7 @@
 # Print traceback when error occurs
 traceback(){
   for ((i=0;i<${#FUNCNAME[@]}-1;i++)); do
-    log.TRACE $(caller $i)
+    echo $(caller $i)
   done
   exit 1
 }
