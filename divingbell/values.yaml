@@ -196,6 +196,13 @@ pod:
         memory: "128Mi"
         cpu: "100m"
 
+network_policy:
+  divingbell:
+    ingress:
+      - {}
+    egress:
+      - {}
+
 manifests:
   daemonset_ethtool: true
   daemonset_mounts: true
@@ -206,3 +213,4 @@ manifests:
   daemonset_perm: true
   daemonset_exec: true
   daemonset_apparmor: true
+  network_policy: false
