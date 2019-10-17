@@ -1208,6 +1208,7 @@ test_apt(){
     packages:
     - name: $APT_PACKAGE1
       version: $APT_VERSION1
+      allow_downgrade: true
     - name: $APT_PACKAGE2" > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
   get_container_status apt

@@ -106,7 +106,7 @@ dpkg --configure -a
 {{- $pkg_name := .name }}
 if [[ "${CURRENT_PACKAGES[{{ .name | squote }}]+isset}" != "isset"{{- if .version }} || "${CURRENT_PACKAGES[{{ .name | squote }}]}" != {{ .version }}{{- end }} ]]; then
     # Run this in case some package installation was interrupted
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold{{- if .repo }} -t {{ .repo }}{{ end }} {{ .name -}} {{- if .version }}={{ .version }}{{ end }}
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold {{- if .allow_downgrade }} "--allow-downgrades" {{ end }}{{- if .repo }} -t {{ .repo }}{{ end }} {{ .name -}} {{- if .version }}={{ .version }}{{ end }}
     INSTALLED_THIS_TIME="$INSTALLED_THIS_TIME {{ .name }}"
 fi
 REQUESTED_PACKAGES="$REQUESTED_PACKAGES {{ .name }}"

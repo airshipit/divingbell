@@ -121,6 +121,7 @@ Here is an example configuration for it::
         packages:
         - name: <PACKAGE1>
           version: <VERSION1>
+          allow_downgrade: true
         - name: <PACKAGE2>
 
 There is a possibility to blacklist packages, e.g. ``telnetd`` and ``nis``::
