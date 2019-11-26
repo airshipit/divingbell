@@ -129,8 +129,8 @@ There is a possibility to blacklist packages, e.g. ``telnetd`` and ``nis``::
     conf:
       apt:
         blacklistpkgs:
-        - name: telnetd
-        - name: nis
+        - telnetd
+        - nis
 
 It is also possible to provide ``debconf`` settings for packages the following
 way::
