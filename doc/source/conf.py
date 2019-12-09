@@ -48,7 +48,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'Divingbell'
-copyright = u'2018 AT&T Intellectual Property.'
+copyright = u'2019 Divingbell Authors.'
 author = u'Divingbell Authors'
 
 # The version info for the project you're documenting, acts as replacement for
