@@ -90,8 +90,20 @@ apt-get update
 {{- if hasKey .Values.conf.apt "packages" }}
 apt-get update
 
+{{/* Build a unified list of packages */}}
+{{- $all_apt_packages := list }}
+{{- if kindIs "map" .Values.conf.apt.packages }}
+{{- range $k, $v := .Values.conf.apt.packages }}
+{{- range $v }}
+{{- $all_apt_packages = . | append $all_apt_packages }}
+{{- end }}
+{{- end }}
+{{- else }}
+{{- $all_apt_packages = .Values.conf.apt.packages }}
+{{- end -}}
+
 # Set all debconf selections up front
-{{- range .Values.conf.apt.packages }}
+{{- range $all_apt_packages }}
 {{- $pkg_name := .name }}
 {{- range .debconf }}
     debconf-set-selections <<< "{{ $pkg_name }} {{ .question }} {{ .question_type }} {{ .answer }}"
@@ -102,7 +114,7 @@ apt-get update
 dpkg --configure -a
 
 # Perform package installs
-{{- range .Values.conf.apt.packages }}
+{{- range $all_apt_packages }}
 {{- $pkg_name := .name }}
 if [[ "${CURRENT_PACKAGES[{{ .name | squote }}]+isset}" != "isset"{{- if .version }} || "${CURRENT_PACKAGES[{{ .name | squote }}]}" != {{ .version }}{{- end }} ]]; then
     # Run this in case some package installation was interrupted

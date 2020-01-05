@@ -79,6 +79,8 @@ APT_VERSION3="$(apt-cache show $APT_PACKAGE3 | grep Version: | tail -1 | awk '{p
 APT_PACKAGE4=less
 APT_PACKAGE5=python-setuptools
 APT_PACKAGE6=telnetd
+APT_PACKAGE7=sudoku
+APT_PACKAGE8=ninvaders
 APT_REPOSITORY1="http://us.archive.ubuntu.com/ubuntu/"
 APT_DISTRIBUTIONS1="[ xenial ]"
 APT_COMPONENTS1="[ main, universe, restricted, multiverse ]"
@@ -1281,7 +1283,7 @@ test_apt(){
   echo '[SUCCESS] apt test5 passed successfully' >> "${TEST_RESULTS}"
 
   # Test blacklistpkgs
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set5.yaml
   echo "conf:
   apt:
     packages:
@@ -1294,7 +1296,7 @@ test_apt(){
   echo '[SUCCESS] apt test6 passed successfully' >> "${TEST_RESULTS}"
 
   # Test add several repositories with gpg keys
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set5.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set6.yaml
   echo "conf:
   apt:
     repositories:
@@ -1326,7 +1328,7 @@ $(printf '%s' "$APT_GPGKEY3" | awk '{printf "          %s\n", $0}')" > "${overri
   echo '[SUCCESS] apt test7 passed successfully' >> "${TEST_RESULTS}"
 
   # Test add same gpg key two times
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set6.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set7.yaml
   echo "conf:
   apt:
     repositories:
@@ -1349,6 +1351,21 @@ $(printf '%s' "$APT_GPGKEY1" | awk '{printf "          %s\n", $0}')" > "${overri
   _test_apt_repositories "$APT_REPOSITORY1 $APT_REPOSITORY2"
   _test_apt_keys "$APT_GPGKEYID1"
   echo '[SUCCESS] apt test8 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test groups of packages using a map
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set8.yaml
+  echo "conf:
+  apt:
+    packages:
+      fun:
+        - name: $APT_PACKAGE7
+      funner:
+        - name: $APT_PACKAGE8" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apt
+  _test_apt_package_version $APT_PACKAGE7 any
+  _test_apt_package_version $APT_PACKAGE8 any
+  echo '[SUCCESS] apt test9 passed successfully' >> "${TEST_RESULTS}"
 }
 
 # test exec module

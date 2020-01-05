@@ -124,6 +124,37 @@ Here is an example configuration for it::
           allow_downgrade: true
         - name: <PACKAGE2>
 
+It is also permissible to use ``conf.apt.packages`` as a map, in which case all
+the packages from the different groups will be installed. This is primary useful
+for logical organization. The keys of the map are ignored, and the values are a
+list of the same format as the packages list above. No deduplication or other
+processing is performed, just a simple concatenation (without any ordering
+guarantees). For example::
+
+    conf:
+      apt:
+        packages:
+          group1:
+          - name: <PACKAGE1>
+            version: <VERSION1>
+            allow_downgrade: true
+          - name: <PACKAGE2>
+          group2:
+          - name: <PACKAGE3>
+          - name: <PACKAGE4>
+
+Is equivalent to::
+
+    conf:
+      apt:
+        packages:
+          - name: <PACKAGE1>
+            version: <VERSION1>
+            allow_downgrade: true
+          - name: <PACKAGE2>
+          - name: <PACKAGE3>
+          - name: <PACKAGE4>
+
 There is a possibility to blacklist packages, e.g. ``telnetd`` and ``nis``::
 
     conf:
