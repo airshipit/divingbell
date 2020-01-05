@@ -27,7 +27,7 @@ if [[ $script_running = 'true' ]]; then
 fi
 
 NAME=divingbell
-: ${LOGS_DIR:=/var/log}
+: ${LOGS_DIR:=/tmp/artifacts}
 : ${LOGS_SUBDIR:=${LOGS_DIR}/${NAME}/$(date +"%m-%d-%y_%H:%M:%S")}
 mkdir -p "${LOGS_SUBDIR}"
 LOG_NAME="${LOGS_SUBDIR}/test.log"

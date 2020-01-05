@@ -95,8 +95,9 @@ trap 'die' ERR
 set -x
 
 write_test(){
-  touch "${1}/__write_test" &&
-    rm "${1}/__write_test" ||
+  local write_test_file
+  write_test_file=$(mktemp -p "${1}/" -t __write_test.XXXXXXXX) &&
+    rm ${write_test_file} ||
     die "Write test to ${1} failed."
 }
 
