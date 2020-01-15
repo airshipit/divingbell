@@ -26,6 +26,8 @@ conf:
   log_colors: False
   apt:
     upgrade: false
+    allow_downgrade: false
+    strict: false
     blacklistpkgs:
     - telnetd
     - inetutils-telnetd

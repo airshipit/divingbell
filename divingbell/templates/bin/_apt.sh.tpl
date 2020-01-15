@@ -85,10 +85,10 @@ rm -rf /etc/apt/sources.list.d/*
 mv /etc/apt/trusted.gpg.d/divindbell_temp.gpg /etc/apt/trusted.gpg.d/divindbell.gpg
 rm -f /etc/apt/trusted.gpg
 find /etc/apt/trusted.gpg.d/ -type f ! -name 'divindbell.gpg' -exec rm {{ "{}" }} \;
-apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get update
 {{- end }}
 {{- if hasKey .Values.conf.apt "packages" }}
-apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get update
 
 {{/* Build a unified list of packages */}}
 {{- $all_apt_packages := list }}
@@ -114,6 +114,7 @@ apt-get update
 dpkg --configure -a
 
 # Perform package installs
+set +x
 {{- range $all_apt_packages }}
 {{- $pkg_name := .name }}
 if [[ "${CURRENT_PACKAGES[{{ .name | squote }}]+isset}" != "isset"{{- if .version }} || "${CURRENT_PACKAGES[{{ .name | squote }}]}" != {{ .version }}{{- end }} ]]; then
@@ -121,8 +122,9 @@ if [[ "${CURRENT_PACKAGES[{{ .name | squote }}]+isset}" != "isset"{{- if .versio
 fi
 REQUESTED_PACKAGES="$REQUESTED_PACKAGES {{$pkg_name}}"
 {{- end }}
+set -x
 # Run this in case some package installation was interrupted
-DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold {{- if .allow_downgrade }} "--allow-downgrades" {{ end }}{{- if .repo }} -t {{ .repo }}{{ end }} $INSTALLED_THIS_TIME
+DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold {{- if .Values.conf.apt.allow_downgrade }} "--allow-downgrades" {{ end }}{{- if .repo }} -t {{ .repo }}{{ end }} $INSTALLED_THIS_TIME
 {{- end }}
 
 # Perform package upgrades
@@ -141,17 +143,51 @@ fi
 #Remove packages not present in conf.apt anymore
 ################################################
 
+{{- if .Values.conf.apt.strict }}
+APT_PURGE="apt-get purge -y --autoremove --allow-remove-essential"
+{{- else }}
+APT_PURGE="apt-get purge -y --autoremove"
+{{- end }}
+
+{{- if hasKey .Values.conf.apt "packages" }}
+{{- if .Values.conf.apt.strict }}
+# in strict mode we execute this stage even on first run, so
+# touch the packages file here to avoid the short-circuit below
+touch ${persist_path}/packages
+{{- end }}
+
 echo $INSTALLED_THIS_TIME | sed 's/ /\n/g' | sed '/^[[:space:]]*$/d' | sort > ${persist_path}/packages.new
 echo $REQUESTED_PACKAGES | sed 's/ /\n/g' | sed '/^[[:space:]]*$/d' | sort > ${persist_path}/packages.requested
 if [ -f ${persist_path}/packages ]; then
+    # if strict mode, we reload the current package list to ensure we have an accurate list to audit from
+    # (e.g., in case a package was requested but not installed for some reason)
+    # note that in strict mode, $CURRENT_PACKAGES will duplicate the packages in $INSTALLED_THIS_TIME but in
+    # non-strict mode (which has logic to use the "packages" file it writes so it doesn't touch anything it
+    # didn't originally install) it doesn't.
+    {{- if .Values.conf.apt.strict }}
+    load_package_list_with_versions $(dpkg -l | awk 'NR>5 {print $2"="$3}')
+    {{- end }}
+    set +x
+    for package in "${!CURRENT_PACKAGES[@]}"
+    do
+        CURRENT_PACKAGE_NAMES="$CURRENT_PACKAGE_NAMES $package"
+    done
+    set -x
+    echo $CURRENT_PACKAGE_NAMES | sed 's/ /\n/g' | sed '/^[[:space:]]*$/d' | sort > ${persist_path}/packages.current
+    {{- if .Values.conf.apt.strict }}
+    TO_DELETE=$(comm -23 ${persist_path}/packages.current ${persist_path}/packages.requested)
+    TO_KEEP=$(echo "$TO_DELETE" | comm -23 ${persist_path}/packages.current -)
+    {{- else }}
     TO_DELETE=$(comm -23 ${persist_path}/packages ${persist_path}/packages.requested)
     TO_KEEP=$(echo "$TO_DELETE" | comm -23 ${persist_path}/packages -)
+    {{- end }}
     if [ ! -z "$TO_DELETE" ]; then
         dpkg --configure -a
-        for pkg in "$TO_DELETE"; do
-            apt-get purge -y $pkg
-        done
-        apt-get autoremove -y
+        PURGE_LIST=""
+        while read -r pkg; do
+            PURGE_LIST="$PURGE_LIST $pkg"
+        done <<< "$TO_DELETE"
+        DEBIAN_FRONTEND=noninteractive $APT_PURGE $PURGE_LIST
     fi
     if [ ! -z "$TO_KEEP" ]; then
         echo "$TO_KEEP" > ${persist_path}/packages
@@ -160,9 +196,12 @@ if [ -f ${persist_path}/packages ]; then
     fi
 fi
 if [ ! -z "$INSTALLED_THIS_TIME" ]; then
+{{- if not .Values.conf.apt.strict }}
     cat ${persist_path}/packages.new >> ${persist_path}/packages
+{{- end }}
     sort ${persist_path}/packages -o ${persist_path}/packages
 fi
+{{- end }}
 
 ######################################################
 #Stage 4
@@ -173,9 +212,8 @@ fi
 dpkg --configure -a
 {{- range .Values.conf.apt.blacklistpkgs }}
   {{- $package := . }}
-  apt-get remove --autoremove -y {{ $package | squote }}
+  DEBIAN_FRONTEND=noninteractive $APT_PURGE {{ $package | squote }}
 {{- end }}
-apt-get autoremove -y
 {{- end }}
 
 log.INFO 'Putting the daemon to sleep.'

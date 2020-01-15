@@ -81,6 +81,16 @@ APT_PACKAGE5=python-setuptools
 APT_PACKAGE6=telnetd
 APT_PACKAGE7=sudoku
 APT_PACKAGE8=ninvaders
+# helper function to generate a yaml config for all installed packages
+APT_YAML_SEPARATOR=$'\n    - name: '
+build_all_packages_yaml(){
+  set +x
+  for f in "$@"; do
+    IFS=":" read -r name arch <<< $f;
+    APT_ALL_INSTALLED_PACKAGES="${APT_ALL_INSTALLED_PACKAGES}${APT_YAML_SEPARATOR}${name}"
+  done
+  set -x
+}
 APT_REPOSITORY1="http://us.archive.ubuntu.com/ubuntu/"
 APT_DISTRIBUTIONS1="[ xenial ]"
 APT_COMPONENTS1="[ main, universe, restricted, multiverse ]"
@@ -355,6 +365,8 @@ _reset_account(){
 }
 
 init_default_state(){
+  # TODO (dc6350) this needs retry logic to avoid race condition where tiller is not ready yet
+  sleep 30 # temporary fix for race condition
   purge_containers
   clean_persistent_files
   # set sysctl original vals
@@ -1207,10 +1219,10 @@ test_apt(){
   local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
   echo "conf:
   apt:
+    allow_downgrade: true
     packages:
     - name: $APT_PACKAGE1
       version: $APT_VERSION1
-      allow_downgrade: true
     - name: $APT_PACKAGE2" > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
   get_container_status apt
@@ -1366,6 +1378,37 @@ $(printf '%s' "$APT_GPGKEY1" | awk '{printf "          %s\n", $0}')" > "${overri
   _test_apt_package_version $APT_PACKAGE7 any
   _test_apt_package_version $APT_PACKAGE8 any
   echo '[SUCCESS] apt test9 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test adding a package in strict mode
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set9.yaml
+  APT_ALL_INSTALLED_PACKAGES="    packages:"
+  build_all_packages_yaml $(dpkg -l | awk 'NR>5 {print $2}')
+  echo "conf:
+  apt:
+    strict: true
+$APT_ALL_INSTALLED_PACKAGES
+    - name: $APT_PACKAGE1" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apt
+  _test_apt_package_version $APT_PACKAGE1 any
+  # PACKAGE4 used earlier is intended to be a package that is always installed
+  _test_apt_package_version $APT_PACKAGE4 any
+  echo '[SUCCESS] apt test10 passed successfully' >> "${TEST_RESULTS}"
+
+  # Test removing a package in strict mode
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set10.yaml
+  # using the same APT_ALL_INSTALLED_PACKAGES from above,
+  # which does NOT have APT_PACKAGE1
+  echo "conf:
+  apt:
+    strict: true
+$APT_ALL_INSTALLED_PACKAGES" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status apt
+  _test_apt_package_version $APT_PACKAGE1 none
+  # PACKAGE4 used earlier is intended to be a package that is always installed
+  _test_apt_package_version $APT_PACKAGE4 any
+  echo '[SUCCESS] apt test11 passed successfully' >> "${TEST_RESULTS}"
 }
 
 # test exec module

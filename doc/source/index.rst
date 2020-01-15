@@ -113,15 +113,29 @@ want to remove from the configuration).
    When ``conf.apt.upgrade`` is ``true``, packages are upgraded `after` the
    requested packages are installed.
 
+.. NOTE::
+
+   When ``conf.apt.allow_downgrade`` is ``true``, the ``--allow-downgrades``
+   flag is passed to ``apt-get install``, allowing it to downgrade a package
+   if so specified in your packages list.
+
+.. NOTE::
+
+   When ``conf.apt.strict`` is ``true``, any packages not in conf.apt.packages
+   will be removed regardless of whether or not divingbell previously installed
+   them. (The default behavior is for only packages previously installed by
+   divingbell to be removed.) USE THIS OPTION WITH EXTREME CAUTION.
+
 Here is an example configuration for it::
 
     conf:
       apt:
         upgrade: false
+        allow_downgrade: false
+        strict: false
         packages:
         - name: <PACKAGE1>
           version: <VERSION1>
-          allow_downgrade: true
         - name: <PACKAGE2>
 
 It is also permissible to use ``conf.apt.packages`` as a map, in which case all
@@ -137,7 +151,6 @@ guarantees). For example::
           group1:
           - name: <PACKAGE1>
             version: <VERSION1>
-            allow_downgrade: true
           - name: <PACKAGE2>
           group2:
           - name: <PACKAGE3>
@@ -150,7 +163,6 @@ Is equivalent to::
         packages:
           - name: <PACKAGE1>
             version: <VERSION1>
-            allow_downgrade: true
           - name: <PACKAGE2>
           - name: <PACKAGE3>
           - name: <PACKAGE4>
