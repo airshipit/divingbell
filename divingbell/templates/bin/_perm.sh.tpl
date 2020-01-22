@@ -97,11 +97,11 @@ revert_perm(){
     for o_perm in ${revert_list}; do
       first=1
       while IFS=' ' read -r a1 a2; do
-        if [ "$first" -eq 1 && -e "$a2"]; then
-          $(chmod "$a1" "$a2")
+        if [ "$first" -eq 1 ] && [ -e "$a2" ]; then
+          chmod "$a1" "$a2"
           first=0
-        elif [ -e "$a2"]; then
-          $(chown "$a1" "$a2")
+        elif [ -e "$a2" ]; then
+          chown "$a1" "$a2"
         else
           log.WARN "Unable to revert permissions on $a2"
           continue
@@ -180,7 +180,7 @@ if [[ $hash_check = pass ]] && [[ $interval_check = pass ]]; then
   fi
  # write timestamp at beginning of execution
  log.INFO 'All permissions successfully applied on this node.'
- echo $(date +"%s") > "${hash}/last_run_timestamp"
+ date +"%s" > "${hash}/last_run_timestamp"
 
  {{- range $perm := .Values.conf.perm.paths }}
  add_perm {{ $perm.path | squote }} {{ $perm.owner | squote }} {{ $perm.group | squote }} {{ $perm.permissions | squote }}
@@ -189,7 +189,7 @@ if [[ $hash_check = pass ]] && [[ $interval_check = pass ]]; then
 
  revert_perm
 
- if [ -n "${curr_settings}" ]; then
+ if [ -n "${applied_perm}" ]; then
   log.INFO 'All permissions successfully applied on this node.'
  else
   log.WARN 'No permissions overrides defined for this node.'

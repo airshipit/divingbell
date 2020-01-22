@@ -59,7 +59,7 @@ load_package_list_with_versions $(dpkg -l | awk 'NR>5 {print $2"="$3}')
 
 {{- if hasKey .Values.conf "apt" }}
 {{- if hasKey .Values.conf.apt "repositories" }}
-echo -n "" > /etc/apt/trusted.gpg.d/divindbell_temp.gpg
+echo -n "" > /etc/apt/trusted.gpg.d/divingbell_temp.gpg
 echo "#The list of repositories managed by Divingbell" > /etc/apt/sources.list.divingbell
   {{- range .Values.conf.apt.repositories }}
     {{- $url := .url }}
@@ -75,16 +75,16 @@ echo "{{ printf "deb %s %s-%s %s" $url $distribution . $components }}" >>/etc/ap
       {{- end }}
     {{- end }}
     {{- if hasKey . "gpgkey" }}
-apt-key --keyring /etc/apt/trusted.gpg.d/divindbell_temp.gpg add - <<"ENDKEY"
+apt-key --keyring /etc/apt/trusted.gpg.d/divingbell_temp.gpg add - <<"ENDKEY"
 {{ .gpgkey }}
 ENDKEY
     {{- end }}
   {{- end }}
 mv /etc/apt/sources.list.divingbell /etc/apt/sources.list
 rm -rf /etc/apt/sources.list.d/*
-mv /etc/apt/trusted.gpg.d/divindbell_temp.gpg /etc/apt/trusted.gpg.d/divindbell.gpg
+mv /etc/apt/trusted.gpg.d/divingbell_temp.gpg /etc/apt/trusted.gpg.d/divingbell.gpg
 rm -f /etc/apt/trusted.gpg
-find /etc/apt/trusted.gpg.d/ -type f ! -name 'divindbell.gpg' -exec rm {{ "{}" }} \;
+find /etc/apt/trusted.gpg.d/ -type f ! -name 'divingbell.gpg' -exec rm {{ "{}" }} \;
 DEBIAN_FRONTEND=noninteractive apt-get update
 {{- end }}
 {{- if hasKey .Values.conf.apt "packages" }}

@@ -75,7 +75,6 @@ exec >& >(while read line; do
           done)
 
 die(){
-  set +x
   # write to stderr any passed error message
   if [[ $@ = *[!\ ]* ]]; then
     log.ERROR "$@"
@@ -85,6 +84,8 @@ die(){
     log.TRACE $(caller $i)
   done
   echo __EXIT_MARKER__
+  log.ERROR "Exiting with unspecified error."
+  set +x
   # Exit after pipe closes to ensure all output is flushed first
   while : ; do
     echo "Waiting on exit..." || exit 1

@@ -207,7 +207,7 @@ Used to execute scripts on nodes in ``systemd`` (PID=1) namespace, for ex.::
       002-script2.sh:
         data: |
           #!/bin/bash
-          echo ${BASH_SOURCE}
+          echo ${BASH_SOURCE[0]}
       001-script1.sh:
         blocking_policy: foreground_halt_pod_on_failure
         env:
@@ -218,7 +218,7 @@ Used to execute scripts on nodes in ``systemd`` (PID=1) namespace, for ex.::
         - arg2
         data: |
           #!/bin/bash
-          echo script name: ${BASH_SOURCE}
+          echo script name: ${BASH_SOURCE[0]}
           echo args: $@
           echo env: $env1 $env2 $env3
 

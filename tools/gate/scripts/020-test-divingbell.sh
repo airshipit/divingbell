@@ -12,7 +12,7 @@ traceback(){
 trap 'traceback' ERR
 
 check_if_running(){
-  script_name="$(basename ${BASH_SOURCE})"
+  script_name="$(basename ${BASH_SOURCE[0]})"
   script_running=false
   for pid in $(pidof -x $script_name); do
     if [ $pid != $$ ]; then
@@ -22,9 +22,11 @@ check_if_running(){
 }
 check_if_running
 if [[ $script_running = 'true' ]]; then
-  echo "$(basename ${BASH_SOURCE}) already running on this node. Please run recheck for your PS."
+  echo "[FAIL] $(basename ${BASH_SOURCE[0]}) already running on this node. Please run recheck for your PS." >> "${TEST_RESULTS}"
   exit 2
 fi
+
+DEFAULT_IFS=$IFS
 
 NAME=divingbell
 : ${LOGS_DIR:=/tmp/artifacts}
@@ -95,7 +97,7 @@ APT_REPOSITORY1="http://us.archive.ubuntu.com/ubuntu/"
 APT_DISTRIBUTIONS1="[ xenial ]"
 APT_COMPONENTS1="[ main, universe, restricted, multiverse ]"
 APT_SUBREPOS1="[ backports, updates ]"
-APT_GPGKEYID1="437D05B5"
+APT_GPGKEYID1="437D 05B5"
 APT_GPGKEY1="-----BEGIN PGP PUBLIC KEY BLOCK-----
 Version: GnuPG v1
 
@@ -177,7 +179,7 @@ APT_REPOSITORY2="http://security.ubuntu.com/ubuntu/"
 APT_DISTRIBUTIONS2="[ xenial ]"
 APT_COMPONENTS2="[ main, universe, restricted, multiverse ]"
 APT_SUBREPOS2="[ security ]"
-APT_GPGKEYID2="C0B21F32"
+APT_GPGKEYID2="C0B2 1F32"
 APT_GPGKEY2="-----BEGIN PGP PUBLIC KEY BLOCK-----
 Version: GnuPG v1
 
@@ -245,7 +247,7 @@ DjfegedFClqpn37b
 APT_REPOSITORY3="https://download.ceph.com/debian-mimic/"
 APT_DISTRIBUTIONS3="[ xenial ]"
 APT_COMPONENTS3="[ main ]"
-APT_GPGKEYID3="460F3994"
+APT_GPGKEYID3="460F 3994"
 APT_GPGKEY3="-----BEGIN PGP PUBLIC KEY BLOCK-----
 Version: GnuPG v1
 
@@ -295,7 +297,11 @@ for line in ${nic_info}; do
     break
   fi
 done
-[ -n "${DEVICE}" ] || (echo Could not find physical NIC for tesing; exit 1)
+IFS=$DEFAULT_IFS
+if [ -z "${DEVICE}" ]; then
+    echo "[FAIL] Could not find physical NIC for testing." >> "${TEST_RESULTS}"
+    exit 1
+fi
 # Not all hardware has the same NIC tunables to use for testing
 if [[ $(/sbin/ethtool -k "${DEVICE}" | grep "${ETHTOOL_KEY3}:") =~ .*fixed.* ]]; then
   ETHTOOL_KEY3="${ETHTOOL_KEY3_BACKUP}"
@@ -308,8 +314,24 @@ exec >& >(while read line; do echo "${line}" | sudo tee -a ${LOG_NAME}; done)
 
 set -x
 
+wait_for_tiller_ready(){
+  local helm_error
+  local retries=5
+  while [ $retries -gt 0 ]; do
+    # the message typically returned before tiller is ready is
+    # 'Error: could not find a ready tiller pod'
+    helm_error="$(helm list ${NAME} 2>&1 | grep 'Error')"
+    if [ -z "${helm_error}" ]; then return 0; fi
+    sleep 10
+    (( retries-- ))
+  done
+  echo "[FAIL] Tiller pod not ready or not available." >> "${TEST_RESULTS}"
+  exit 1
+}
+
 purge_containers(){
-  local chart_status="$(helm list ${NAME})"
+  local chart_status
+  chart_status="$(helm list ${NAME})"
   if [ -n "${chart_status}" ]; then
     helm delete --purge ${NAME}
   fi
@@ -366,8 +388,7 @@ _reset_account(){
 }
 
 init_default_state(){
-  # TODO (dc6350) this needs retry logic to avoid race condition where tiller is not ready yet
-  sleep 30 # temporary fix for race condition
+  wait_for_tiller_ready
   purge_containers
   clean_persistent_files
   # set sysctl original vals
@@ -400,11 +421,16 @@ dry_run(){
   helm install --name="${NAME}" --dry-run --debug "${NAME}" --namespace="${NAME}" "$@"
 }
 
+# parameter 1 to get_container_status is the module name (e.g., "apt")
+# parameter 2 is optional and can be "expect_failure" to return success
+# on container failure and failure on container success, or "ignore_failure"
+# to return success regardless of container status.
 get_container_status(){
   local deployment="${1}"
   local log_connect_timeout=60
   local log_connect_sleep_interval=2
   local wait_time=0
+  local status
   while : ; do
     container="$(kubectl get pods --namespace="${NAME}" | grep ${NAME}-${deployment} | grep -v Terminating | cut -d' ' -f1)"
     kubectl logs "${container}" --namespace="${NAME}" > /dev/null && break || \
@@ -412,8 +438,12 @@ get_container_status(){
       wait_time=$((${wait_time} + ${log_connect_sleep_interval})) && \
       sleep ${log_connect_sleep_interval}
     if [ ${wait_time} -ge ${log_connect_timeout} ]; then
-      echo "Hit timeout while waiting for container logs to become available."
-      exit 1
+      if [ "${2}" = 'ignore_failure' ]; then
+        echo "Hit timeout while waiting for container logs to become available (ignored)."
+      else
+        echo "[FAIL] Hit timeout while waiting for container logs to become available." >> "${TEST_RESULTS}"
+        exit 1
+      fi
     fi
   done
   local container_runtime_timeout=210
@@ -421,24 +451,32 @@ get_container_status(){
   wait_time=0
   while : ; do
     CLOGS="$(kubectl logs --namespace="${NAME}" "${container}" 2>&1)" || true
-    local status="$(echo "${CLOGS}" | tail -1)"
+    # the test below now looks at the last ten lines of the log rather than
+    # just the last line, since there are cases where other things have to get
+    # logged after the error / success message.
+    # also: trying printf here to avoid arcane SIGTERM/SIGPIPE problems with
+    # builtin echo.
+    status="$(printf '%s' "${CLOGS}" | tail -n 10)"
     if [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *ERROR* ]] ||
        [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *TRACE* ]]; then
       if [ "${2}" = 'expect_failure' ]; then
         echo 'Pod exited as expected'
         break
+      elif [ "${2}" = 'ignore_failure' ]; then
+        echo 'Pod exited with error status (ignored).'
+        break
       else
-        echo 'Expected pod to complete successfully, but pod reported errors'
-        echo 'pod logs:'
-        echo "${CLOGS}"
+        echo '[FAIL] Expected pod to complete successfully, but pod reported errors' >> "${TEST_RESULTS}"
+        echo 'pod logs:' >> "${TEST_RESULTS}"
+        printf '%s' "${CLOGS}" >> "${TEST_RESULTS}"
         exit 1
       fi
     elif [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *'INFO Putting the daemon to sleep'* ]] ||
     [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *'DEBUG + exit 0'* ]]; then
       if [ "${2}" = 'expect_failure' ]; then
-        echo 'Expected pod to die with error, but pod completed successfully'
-        echo 'pod logs:'
-        echo "${CLOGS}"
+        echo '[FAIL] Expected pod to die with error, but pod completed successfully' >> "${TEST_RESULTS}"
+        echo 'pod logs:' >> "${TEST_RESULTS}"
+        printf '%s' "${CLOGS}" >> "${TEST_RESULTS}"
         exit 1
       else
         echo 'Pod completed without errors.'
@@ -456,13 +494,19 @@ get_container_status(){
 }
 
 _test_sysctl_default(){
-  test "$(/sbin/sysctl "${1}" | cut -d'=' -f2 | tr -d '[:space:]')" = "${2}"
+  if [ "$(/sbin/sysctl "${1}" | cut -d'=' -f2 | tr -d '[:space:]')" != "${2}" ]; then
+    echo "[FAIL] Expected kernel parameter ${1} to be set to ${2}, but it was not." >> "${TEST_RESULTS}"
+    exit 1
+  fi
 }
 
 _test_sysctl_value(){
   _test_sysctl_default "${1}" "${2}"
   local key="${1//\//.}"
-  test "$(cat /etc/sysctl.d/60-${NAME}-${key}.conf)" = "${key}=${2}"
+  if [ "$(cat /etc/sysctl.d/60-${NAME}-${key}.conf)" != "${key}=${2}" ]; then
+    echo "[FAIL] Expected kernel parameter ${key}=${2} to be persisted in /etc/sysctl.d, but it was not." >> "${TEST_RESULTS}"
+    exit 1
+  fi
 }
 
 _test_exec_match(){
@@ -470,10 +514,10 @@ _test_exec_match(){
   exec_testfile="$2"
   testID="$3"
   if [[ $expected_result != $(cat $exec_testfile) ]]; then
-    echo "[FAIL] exec $testID failed. Expected:"
-    echo $expected_result
-    echo but got:
-    echo $(cat $exec_testfile)
+    echo "[FAIL] exec $testID failed. Expected:" >> "${TEST_RESULTS}"
+    echo $expected_result >> "${TEST_RESULTS}"
+    echo "but got:" >> "${TEST_RESULTS}"
+    echo $(cat $exec_testfile) >> "${TEST_RESULTS}"
     exit 1
   fi
   rm $exec_testfile
@@ -483,19 +527,20 @@ _test_exec_count(){
   script_location="${1}"
   script_name="${2}"
   script_expected_run_count="${3}"
-  script_run_count=$(cat "${script_location}" | wc -l)
+  script_run_count=$(wc -l "${script_location}")
   if [[ ${script_run_count} -ne ${script_expected_run_count} ]]; then
-    echo "[FAIL] Expected '${script_name}' to run '${script_expected_run_count}' times, but instead it ran '$script_run_count' times"
+    echo "[FAIL] Expected '${script_name}' to run '${script_expected_run_count}' times, but instead it ran '$script_run_count' times" >> "${TEST_RESULTS}"
     exit 1
   fi
 }
 
 _test_clog_msg(){
-  [[ $CLOGS = *${1}* ]] ||
-    (echo "Did not find expected string: '${1}'"
-     echo "in container logs:"
-     echo "${CLOGS}"
-     exit 1)
+  if [[ $CLOGS != *${1}* ]]; then
+    echo "[FAIL] Did not find expected string: '${1}'" >> "${TEST_RESULTS}"
+    echo "in container logs:" >> "${TEST_RESULTS}"
+    printf '%s' "${CLOGS}" >> "${TEST_RESULTS}"
+    exit 1
+  fi
 }
 
 alias install_base="install ${BASE_VALS}"
@@ -510,7 +555,7 @@ shopt -s expand_aliases
 
 test_sysctl(){
   # Test the first set of values
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set1.yaml
   local val1=0
   local val2=1
   local val3=0
@@ -530,7 +575,7 @@ test_sysctl(){
   echo '[SUCCESS] sysctl test1 passed successfully' >> "${TEST_RESULTS}"
 
   # Test an updated set of values
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set2.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set2.yaml
   val1=1
   val2=0
   val3=1
@@ -559,7 +604,7 @@ test_sysctl(){
   echo '[SUCCESS] sysctl test3 passed successfully' >> "${TEST_RESULTS}"
 
   # Test invalid key
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-invalid1.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-invalid1.yaml
   echo "conf:
   sysctl:
     this.is.a.bogus.key: 1" > "${overrides_yaml}"
@@ -569,7 +614,7 @@ test_sysctl(){
   echo '[SUCCESS] sysctl test4 passed successfully' >> "${TEST_RESULTS}"
 
   # Test invalid val
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-invalid2.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-invalid2.yaml
   echo "conf:
   sysctl:
     $SYSCTL_KEY1: bogus" > "${overrides_yaml}"
@@ -592,7 +637,7 @@ _test_limits_value(){
 }
 
 test_limits(){
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}.yaml
   echo "conf:
   limits:
     limit1:
@@ -618,12 +663,24 @@ _test_perm_value(){
   local owner=${2}
   local group=${3}
   local perm=${4}
-  local r_owner="$(stat -c %U ${file})"
-  local r_group="$(stat -c %G ${file})"
-  local r_perm="$(stat -c %a ${file})"
-  [ "${perm}"=="${r_perm}" ] && echo "+" || (echo "File ${file} permissions ${r_perm} but expected ${perm}"; exit 1)
-  [ "${owner}"=="${r_owner}" ] && echo "+" || (echo "File ${file} owner ${r_owner} but expected ${owner}"; exit 1)
-  [ "${group}"=="${r_group}" ] && echo "+" || (echo "File ${file} group ${r_group} but expected ${group}"; exit 1)
+  local r_owner
+  local r_group
+  local r_perm
+  r_owner="$(stat -c %U ${file})"
+  r_group="$(stat -c %G ${file})"
+  r_perm="$(stat -c %a ${file})"
+  if [ "${perm}" != "${r_perm}" ]; then
+    echo "[FAIL] File ${file} has permissions ${r_perm} but expected ${perm}" >> "${TEST_RESULTS}"
+    exit 1
+  fi
+  if [ "${owner}" != "${r_owner}" ]; then
+    echo "[FAIL] File ${file} has owner ${r_owner} but expected ${owner}" >> "${TEST_RESULTS}"
+    exit 1
+  fi
+  if [ "${group}" != "${r_group}" ]; then
+    echo "[FAIL] File ${file} has group ${r_group} but expected ${group}" >> "${TEST_RESULTS}"
+    exit 1
+  fi
 }
 
 _perm_init_one(){
@@ -662,7 +719,7 @@ _perm_teardown(){
 
 test_perm(){
   _perm_init
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}.yaml
   echo "conf:
   perm:
     paths:
@@ -704,8 +761,10 @@ test_perm(){
       owner: 'root'
       group: 'shadow'
       permissions: '0640'" > "${overrides_yaml}"
-  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .rerun_interval. Got' || \
-    (echo "[FAIL] perm test invalid rerun_interval value did not receive expected 'BAD .rerun_interval. Got' error" && exit 1)
+  if [ -z "$(install_base "--values=${overrides_yaml}" |& grep 'BAD .rerun_interval. Got')" ]; then
+    echo "[FAIL] perm test invalid rerun_interval value did not receive expected 'BAD .rerun_interval. Got' error" >> "${TEST_RESULTS}"
+    exit 1
+  fi
   echo '[SUCCESS] perm test invalid rerun_interval passed successfully' >> "${TEST_RESULTS}"
   # Test invalid rerun_interval combination
   echo "conf:
@@ -718,8 +777,10 @@ test_perm(){
       owner: 'root'
       group: 'shadow'
       permissions: '0640'" > "${overrides_yaml}"
-  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD COMBINATION' || \
-    (echo "[FAIL] perm invalid rerun_interval combination did not receive expected 'BAD COMBINATION' error" && exit 1)
+  if [ -z "$(install_base "--values=${overrides_yaml}" |& grep 'BAD COMBINATION')" ]; then
+    echo "[FAIL] perm invalid rerun_interval combination did not receive expected 'BAD COMBINATION' error" >> "${TEST_RESULTS}"
+    exit 1
+  fi
   echo '[SUCCESS] perm invalid rerun_interval combination passed successfully' >> "${TEST_RESULTS}"
   # test rerun_interval
   echo "conf:
@@ -736,33 +797,42 @@ test_perm(){
   sleep 72
   get_container_status perm
   _test_perm_value ${p_test_file1} root shadow 640
-  echo '[SUCCESS] perm rerun_interval passed successfully' >> "${TEST_RESULTS}"
+  echo '[SUCCESS] perm rerun_interval passed successfully.' >> "${TEST_RESULTS}"
   _perm_teardown
 }
 
 _test_if_mounted_positive(){
-  mountpoint "${1}" || (echo "Expect ${1} to be mounted, but was not"; exit 1)
-  df -h | grep "${1}" | grep "${2}" ||
-    (echo "Did not find expected mount size of ${2} in mount table"; exit 1)
+  if ! mountpoint "${1}"; then
+    echo "[FAIL] Expected ${1} to be mounted, but it is not." >> "${TEST_RESULTS}"
+    exit 1
+  fi
+  if [ -z "$(df -h | grep ${1} | grep ${2})" ]; then
+    echo "[FAIL] Expected to find mount size of ${2} for mountpoint ${1} in mount table, but did not." >> "${TEST_RESULTS}"
+    exit 1
+  fi
   __set_systemd_name "${1}" mount
-  systemctl is-enabled "${SYSTEMD_NAME}" ||
-    (echo "Expect ${SYSTEMD_NAME} to be flagged to start on boot, but is not"
-     exit 1)
+
+  if ! systemctl is-enabled "${SYSTEMD_NAME}"; then
+    echo "[FAIL] Expected ${SYSTEMD_NAME} to be flagged to start on boot, but it is not." >> "${TEST_RESULTS}"
+    exit 1
+  fi
 }
 
 _test_if_mounted_negative(){
-  mountpoint "${1}" &&
-    (echo "Expect ${1} not to be mounted, but was"
-     exit 1) || true
+  if mountpoint "${1}"; then
+    echo "[FAIL] Expected ${1} not to be mounted, but it was." >> "${TEST_RESULTS}"
+    exit 1
+  fi
   __set_systemd_name "${1}" mount
-  systemctl is-enabled "${SYSTEMD_NAME}" &&
-    (echo "Expect ${SYSTEMD_NAME} not to be flagged to start on boot, but was"
-     exit 1) || true
+  if systemctl is-enabled "${SYSTEMD_NAME}"; then
+    echo "[FAIL] Expected ${SYSTEMD_NAME} not to be flagged to start on boot, but it is." >> "${TEST_RESULTS}"
+    exit 1
+  fi
 }
 
 test_mounts(){
   # Test the first set of values
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set1.yaml
   local mount_size=32M
   echo "conf:
   mounts:
@@ -791,7 +861,7 @@ test_mounts(){
   echo '[SUCCESS] mounts test1 passed successfully' >> "${TEST_RESULTS}"
 
   # Test an updated set of values
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set2.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set2.yaml
   mount_size=30M
   echo "conf:
   mounts:
@@ -828,7 +898,7 @@ test_mounts(){
   echo '[SUCCESS] mounts test3 passed successfully' >> "${TEST_RESULTS}"
 
   # Test invalid mount
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-invalid1.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-invalid1.yaml
   echo "conf:
   mounts:
     mnt:
@@ -852,8 +922,15 @@ _test_ethtool_value(){
 }
 
 test_ethtool(){
+  # On certain opendev hardware, it's not possible to change the
+  # ethtool tunables, or the expected tunables are unavailable.
+  # Until we have a mechanism to schedule to the right hardware,
+  # we will just issue a warning whenever these tests fail instead
+  # of failing the gate (thus the "ignore_failure" on get_container_status
+  # calls in this section)
+
   # Test the first set of values
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set1.yaml
   local val2=on
   local val3=off
   [ -n "${ETHTOOL_KEY3}" ] && local line2_1="${ETHTOOL_KEY3}: $val3"
@@ -865,14 +942,14 @@ test_ethtool(){
       $line2_1
       $ETHTOOL_KEY4: $val4" > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
-  get_container_status ethtool
+  get_container_status ethtool ignore_failure
   _test_ethtool_value $ETHTOOL_KEY2 $val2
   _test_ethtool_value "$ETHTOOL_KEY3" $val3
   _test_ethtool_value $ETHTOOL_KEY4 $val4
   echo '[SUCCESS] ethtool test1 passed successfully' >> "${TEST_RESULTS}"
 
   # Test an updated set of values
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set2.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set2.yaml
   val2=off
   val3=on
   [ -n "${ETHTOOL_KEY3}" ] && local line2_2="${ETHTOOL_KEY3}: $val3"
@@ -884,32 +961,32 @@ test_ethtool(){
       $line2_2
       $ETHTOOL_KEY4: $val4" > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
-  get_container_status ethtool
+  get_container_status ethtool ignore_failure
   _test_ethtool_value $ETHTOOL_KEY2 $val2 && \
-    echo "[SUCCESS] ethtool test2 $ETHTOOL_KEY2:$val2 passed successfully" || \
+    echo "[SUCCESS] ethtool test2 $ETHTOOL_KEY2:$val2 passed successfully" >> "${TEST_RESULTS}" || \
     ethtool_opendev_warn
   _test_ethtool_value "$ETHTOOL_KEY3" $val3 && \
-    echo "[SUCCESS] ethtool test2 $ETHTOOL_KEY3:$val3 passed successfully" || \
+    echo "[SUCCESS] ethtool test2 $ETHTOOL_KEY3:$val3 passed successfully" >> "${TEST_RESULTS}" || \
     ethtool_opendev_warn
   _test_ethtool_value $ETHTOOL_KEY4 $val4 && \
-    echo "[SUCCESS] ethtool test2 $ETHTOOL_KEY4:$val4 passed successfully" || \
+    echo "[SUCCESS] ethtool test2 $ETHTOOL_KEY4:$val4 passed successfully" >> "${TEST_RESULTS}" || \
     ethtool_opendev_warn
 
   # Test revert/rollback functionality
   install_base
-  get_container_status ethtool
+  get_container_status ethtool ignore_failure
   _test_ethtool_value $ETHTOOL_KEY2 $ETHTOOL_VAL2_DEFAULT && \
-    echo "[SUCCESS] ethtool test3 $ETHTOOL_KEY2:$ETHTOOL_VAL2_DEFAULT passed successfully" || \
+    echo "[SUCCESS] ethtool test3 $ETHTOOL_KEY2:$ETHTOOL_VAL2_DEFAULT passed successfully" >> "${TEST_RESULTS}" || \
     ethtool_opendev_warn
   _test_ethtool_value "$ETHTOOL_KEY3" $ETHTOOL_VAL3_DEFAULT && \
-    echo "[SUCCESS] ethtool test3 $ETHTOOL_KEY3:$ETHTOOL_VAL3_DEFAULT passed successfully" || \
+    echo "[SUCCESS] ethtool test3 $ETHTOOL_KEY3:$ETHTOOL_VAL3_DEFAULT passed successfully" >> "${TEST_RESULTS}" || \
     ethtool_opendev_warn
   _test_ethtool_value $ETHTOOL_KEY4 $ETHTOOL_VAL4_DEFAULT && \
-    echo "[SUCCESS] ethtool test3 $ETHTOOL_KEY4:$ETHTOOL_VAL4_DEFAULT passed successfully" || \
+    echo "[SUCCESS] ethtool test3 $ETHTOOL_KEY4:$ETHTOOL_VAL4_DEFAULT passed successfully" >> "${TEST_RESULTS}" || \
     ethtool_opendev_warn
 
   # Test invalid key
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-invalid1.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-invalid1.yaml
   echo "conf:
   ethtool:
     ${DEVICE}:
@@ -920,7 +997,7 @@ test_ethtool(){
   echo '[SUCCESS] ethtool test4 passed successfully' >> "${TEST_RESULTS}"
 
   # Test invalid val
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-invalid2.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-invalid2.yaml
   echo "conf:
   ethtool:
     ${DEVICE}:
@@ -931,7 +1008,7 @@ test_ethtool(){
   echo '[SUCCESS] ethtool test5 passed successfully' >> "${TEST_RESULTS}"
 
   # Test fixed (unchangeable) ethtool param
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-invalid3.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-invalid3.yaml
   echo "conf:
   ethtool:
     ${DEVICE}:
@@ -942,7 +1019,7 @@ test_ethtool(){
   echo '[SUCCESS] ethtool test6 passed successfully' >> "${TEST_RESULTS}"
 
   # Test ethtool settings conflict
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-invalid4.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-invalid4.yaml
   echo "conf:
   ethtool:
     ${DEVICE}:
@@ -959,16 +1036,25 @@ _test_user_enabled(){
   username=$1
   user_enabled=$2
 
+  # verify the user exists
+  if ! getent passwd "${username}" >& /dev/null; then
+    echo "[FAIL] Expected user ${username} to exist, but it does not." >> "${TEST_RESULTS}"
+    exit 1
+  fi
   if [ "${user_enabled}" = "true" ]; then
-    # verify the user is there and not set to expire
-    getent passwd $username >& /dev/null
-    test "$(chage -l ${username} | grep 'Account expires' | cut -d':' -f2 |
-            tr -d '[:space:]')" = "never"
+    # verify the user is not set to expired
+    if [ "$(chage -l ${username} | grep 'Account expires' | cut -d':' -f2 |
+            tr -d '[:space:]')" != "never" ]; then
+      echo "[FAIL] Expected user ${username} to be set to non-expired, but it was not." >> "${TEST_RESULTS}"
+      exit 1
+    fi
   else
-    # Verify user is not non-expiring
-    getent passwd $username >& /dev/null
-    test "$(chage -l ${username} | grep 'Account expires' | cut -d':' -f2 |
-            tr -d '[:space:]')" != "never"
+    # Verify user is set to expired (@ t=1, 2 Jan 1970)
+    if [ "$(chage -l ${username} | grep 'Account expires' | cut -d':' -f2 |
+            tr -d '[:space:]')" != "Jan02,1970" ]; then
+      echo "[FAIL] Expected user ${username} to be set to expired, but it was not." >> "${TEST_RESULTS}"
+      exit 1
+    fi
   fi
 }
 
@@ -976,25 +1062,30 @@ _test_user_purged(){
   username=$1
 
   # Verify user is no longer defined
-  getent passwd $username >& /dev/null && \
-    echo "Error: User '$username' exists, but was expected it to be purged" && \
-    return 1
+  if getent passwd "${username}" >& /dev/null; then
+    echo "[FAIL] Expected user ${username} to be purged, but it was not."  >> "${TEST_RESULTS}"
+    exit 1
+  fi
 
-  if [ -d /home/$username ]; then
-    echo "Error: User '$username' home dir exists; expected it to be purged"
-    return 1
+  if [ -d "/home/${username}" ]; then
+    echo "[FAIL] Expected home directory for user ${username} to be removed, but it was not." >> "${TEST_RESULTS}"
+    exit 1
   fi
 }
 
 _test_sudo_enabled(){
   username=$1
   sudo_enable=$2
-  sudoers_file=/etc/sudoers.d/*$username*
+  local keyword='divingbell'
+  sudoers_file=$(ls -l /etc/sudoers.d | grep "${keyword}-${username}-sudo" | head -n 1)
 
-  if [ "${sudo_enable}" = "true" ]; then
-    test -f $sudoers_file
-  else
-    test ! -f $sudoers_file
+  if [ "${sudo_enable}" = "true" ] && [ -z "$sudoers_file" ]; then
+    echo "[FAIL] Expected user ${username} to have a file named ${keyword}-${username}-sudo in the sudoers directory, but it does not." >> "${TEST_RESULTS}"
+    exit 1
+  fi
+  if [ "${sudo_enable}" != "true" ] && [ -n "$sudoers_file" ]; then
+    echo "[FAIL] Expected user ${username} to have no file named ${keyword}-${username}-sudo in the sudoers directory, but it has one." >> "${TEST_RESULTS}"
+    exit 1
   fi
 }
 
@@ -1004,9 +1095,15 @@ _test_ssh_keys(){
   ssh_file=/home/$username/.ssh/authorized_keys
 
   if [ "$sshkey" = "false" ]; then
-    test ! -f "${ssh_file}"
+    if [ -f "${ssh_file}" ]; then
+      echo "[FAIL] Expected user ${username} to have no .ssh/authorized_keys file, but it has one." >> "${TEST_RESULTS}"
+      exit 1
+    fi
   else
-    grep "$sshkey" "${ssh_file}"
+    if [ -z "$(grep ${sshkey} ${ssh_file})" ]; then
+      echo "[FAIL] Expected user ${username} to have ssh key ${sshkey}, but it does not." >> "${TEST_RESULTS}"
+      exit 1
+    fi
   fi
 }
 
@@ -1015,14 +1112,14 @@ _test_user_passwd(){
   crypt_passwd="$2"
 
   if [ "$crypt_passwd" != "$(getent shadow $username | cut -d':' -f2)" ]; then
-    echo "Error: User '$username' passwd did not match expected val '$crypt_passwd'"
-    return 1
+    echo "[FAIL] Expected user ${username} to have password ${crypt_passwd}, but it did not." >> "${TEST_RESULTS}"
+    exit 1
   fi
 }
 
 test_uamlite(){
   # Test the first set of values
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set1.yaml
   echo "conf:
   uamlite:
     users:
@@ -1063,7 +1160,7 @@ test_uamlite(){
   echo '[SUCCESS] uamlite test1 passed successfully' >> "${TEST_RESULTS}"
 
   # Test an updated set of values
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set2.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set2.yaml
   uname1_sudo=false
   uname2_sudo=true
   uname3_sudo=false
@@ -1119,7 +1216,7 @@ test_uamlite(){
   echo '[SUCCESS] uamlite test3 passed successfully' >> "${TEST_RESULTS}"
 
   # Test purge users flag
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set4.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set4.yaml
   echo "conf:
   uamlite:
     purge_expired_users: true" > "${overrides_yaml}"
@@ -1132,19 +1229,21 @@ test_uamlite(){
   echo '[SUCCESS] uamlite test4 passed successfully' >> "${TEST_RESULTS}"
 
   # Test invalid password
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set5.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set5.yaml
   user2_crypt_passwd_invalid='plaintextPassword'
   echo "conf:
   uamlite:
     users:
     - user_name: ${USERNAME2}
       user_crypt_passwd: ${user2_crypt_passwd_invalid}" > "${overrides_yaml}"
-  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD PASSWORD' || \
-    (echo "[FAIL] uamlite test5 did not receive expected 'BAD PASSWORD' error" && exit 1)
-  echo '[SUCCESS] uamlite test5 passed successfully' >> "${TEST_RESULTS}"
+  if [ -z "$(install_base "--values=${overrides_yaml}" |& grep 'BAD PASSWORD')" ]; then
+    echo "[FAIL] uamlite test5 did not receive expected 'BAD PASSWORD' error." >> "${TEST_RESULTS}"
+    exit 1
+  fi
+  echo '[SUCCESS] uamlite test5 passed successfully.' >> "${TEST_RESULTS}"
 
   # Test invalid SSH key
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set6.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set6.yaml
   user2_bad_sshkey='AAAAB3NzaC1yc2EAAAABIwAAAQEAklOUpkDHrfHY17SbrmT key-comment'
   echo "conf:
   uamlite:
@@ -1154,29 +1253,31 @@ test_uamlite(){
       - ${USERNAME2_SSHKEY1}
       - ${user2_bad_sshkey}
       - ${USERNAME2_SSHKEY3}" > "${overrides_yaml}"
-  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD SSH KEY' || \
-    (echo "[FAIL] uamlite test6 did not receive expected 'BAD SSH KEY' error" && exit 1)
-  echo '[SUCCESS] uamlite test6 passed successfully' >> "${TEST_RESULTS}"
+  if [ -z "$(install_base "--values=${overrides_yaml}" |& grep 'BAD SSH KEY')" ]; then
+    echo "[FAIL] uamlite test6 did not receive expected 'BAD SSH KEY' error." >> "${TEST_RESULTS}"
+    exit 1
+  fi
+  echo '[SUCCESS] uamlite test6 passed successfully.' >> "${TEST_RESULTS}"
 }
 
 _test_apt_package_version(){
   local pkg_name=$1
   local pkg_ver=$2
-  if [ ${pkg_ver} = "none" ]; then
+  if [ "${pkg_ver}" = "none" ]; then
     # Does not include residual-config
-    if [[ $(dpkg -l | grep ${pkg_name} | grep -v ^rc) ]]; then
-      echo "[FAIL] Package ${pkg_name} should not be installed" >> "${TEST_RESULTS}"
-      return 1
+    if [ -n "$(dpkg -l | grep ${pkg_name} | grep -v ^rc)" ]; then
+      echo "[FAIL] Expected package ${pkg_name} not to be installed, but it was." >> "${TEST_RESULTS}"
+      exit 1
     fi
-  elif [ ${pkg_ver} = "any" ]; then
-    if [[ ! $(dpkg -l | grep ${pkg_name}) ]]; then
-      echo "[FAIL] Package ${pkg_name} should be installed" >> "${TEST_RESULTS}"
-      return 1
+  elif [ "${pkg_ver}" = "any" ]; then
+    if [ -z "$(dpkg -l | grep ${pkg_name})" ]; then
+      echo "[FAIL] Expected package ${pkg_name} to be installed, but it wasn't." >> "${TEST_RESULTS}"
+      exit 1
     fi
   else
     if [ $(dpkg -l | awk "/[[:space:]]${pkg_name}[[:space:]]/"'{print $3}') != "${pkg_ver}" ]; then
-      echo "[FAIL] Package ${pkg_name} should be of version ${pkg_ver}" >> "${TEST_RESULTS}"
-      return 1
+      echo "[FAIL] Expected package ${pkg_name} version ${pkg_ver} to be installed, but it wasn't." >> "${TEST_RESULTS}"
+      exit 1
     fi
   fi
 }
@@ -1188,36 +1289,49 @@ _test_apt_repositories(){
   do
     if ! grep -qrh "$repository" /etc/apt/sources.list /etc/apt/sources.list.d/*
     then
-      echo "[FAIL] The repository (${repository}) was not added."
-      #return 1
+      echo "[FAIL] Expected repository ${repository} to be added, but it wasn't." >> "${TEST_RESULTS}"
+      exit 1
     fi
   done
-  remaining_repos=$(grep -rh "^deb" /etc/apt/sources.list /etc/apt/sources.list.d/* | sort -u | grep -v "${repositories// /\\|}" | awk '{print$2}')
+  remaining_repos=$(grep -qrh "^deb" /etc/apt/sources.list /etc/apt/sources.list.d/* | sort -u | grep -v "${repositories// /\\|}" | awk '{print$2}')
   for repo in $remaining_repos
   do
-    echo "[FAIL] Repository ${repo} should not be added."
+    echo "[FAIL] Expected repository ${repo} not to be added, but it was." >> "${TEST_RESULTS}"
+    exit 1
   done
 }
 
 _test_apt_keys(){
+  # NOTE: this is somewhat brittle as the output format of apt-key has been known to change.
+  # current code is written for the format:
+  # /etc/apt/trusted.gpg.d/some-key.gpg
+  # ------------------------------------------------------
+  # pub   rsa4096 2001-01-01 [SC]
+  #       0000 0000 0000 0000 0000  0000 0000 0000 0000 0000
+  # uid           [ unknown] words words words (2001) <somebody@somewhere.com>
+  # The keys specified at the top of the script ($APT_GPGKEYID1 etc.) should match the
+  # first 4-digit hex value listed.
+
   local keys=$1
   for key in $keys
   do
-    if ! apt-key list | grep -q "$key"
+    if [ -z "$(apt-key list | grep "$key")" ]
     then
-      echo "[FAIL] The gpg key (${key}) was not installed"
+      echo "[FAIL] The gpg key starting with (${key}) was not installed." >> "${TEST_RESULTS}"
+      exit 1
     fi
   done
-  remaining_keys=$(apt-key list | grep "^pub" | grep -v "${keys// /\\|}" | awk '{print$2}')
+  remaining_keys=$(apt-key list | grep -A 1 "^pub" | grep -v "^pub" | grep -v -x "\-\-" | grep -v "${keys// /\\|}" | awk '{print$1}')
   for rkey in $remaining_keys
   do
-    echo "[FAIL] The gpg key (${rkey}) should not be installed"
+    echo "[FAIL] The gpg key starting with (${rkey}) should not be installed." >> "${TEST_RESULTS}"
+    exit 1
   done
 }
 
 test_apt(){
   # Test the valid set of packages
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set1.yaml
   echo "conf:
   apt:
     allow_downgrade: true
@@ -1232,7 +1346,7 @@ test_apt(){
   echo '[SUCCESS] apt test1 passed successfully' >> "${TEST_RESULTS}"
 
   # Test removal of one package and install of one new package
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set2.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set2.yaml
   echo "conf:
   apt:
     packages:
@@ -1252,15 +1366,15 @@ test_apt(){
   _test_apt_package_version $APT_PACKAGE2 any
   # Each entry in passwords.dat contains question value in Name and Template
   # field, so grepping root_password should return 4 lines
-  if [[ $(grep root_password /var/cache/debconf/passwords.dat | wc -l) != 4 ]]; then
+  if [[ $(grep -c root_password /var/cache/debconf/passwords.dat) != 4 ]]; then
     echo "[FAIL] Package $APT_PACKAGE2 should have debconf values configured" >> "${TEST_RESULTS}"
-    return 1
+    exit 1
   fi
   _test_apt_package_version $APT_PACKAGE3 $APT_VERSION3
   echo '[SUCCESS] apt test2 passed successfully' >> "${TEST_RESULTS}"
 
   # Test removal of all installed packages and install of one that already exists
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set3.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set3.yaml
   echo "conf:
   apt:
     packages:
@@ -1272,7 +1386,7 @@ test_apt(){
   echo '[SUCCESS] apt test3 passed successfully' >> "${TEST_RESULTS}"
 
   # Test package not installed by divingbell not removed
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set4.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set4.yaml
   echo "conf:
   apt:
     packages:
@@ -1284,7 +1398,7 @@ test_apt(){
   echo '[SUCCESS] apt test4 passed successfully' >> "${TEST_RESULTS}"
 
   # Test invalid package name
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-invalid1.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-invalid1.yaml
   echo "conf:
   apt:
     packages:
@@ -1296,7 +1410,7 @@ test_apt(){
   echo '[SUCCESS] apt test5 passed successfully' >> "${TEST_RESULTS}"
 
   # Test blacklistpkgs
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set5.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set5.yaml
   echo "conf:
   apt:
     packages:
@@ -1309,7 +1423,7 @@ test_apt(){
   echo '[SUCCESS] apt test6 passed successfully' >> "${TEST_RESULTS}"
 
   # Test add several repositories with gpg keys
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set6.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set6.yaml
   echo "conf:
   apt:
     repositories:
@@ -1341,7 +1455,7 @@ $(printf '%s' "$APT_GPGKEY3" | awk '{printf "          %s\n", $0}')" > "${overri
   echo '[SUCCESS] apt test7 passed successfully' >> "${TEST_RESULTS}"
 
   # Test add same gpg key two times
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set7.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set7.yaml
   echo "conf:
   apt:
     repositories:
@@ -1366,7 +1480,7 @@ $(printf '%s' "$APT_GPGKEY1" | awk '{printf "          %s\n", $0}')" > "${overri
   echo '[SUCCESS] apt test8 passed successfully' >> "${TEST_RESULTS}"
 
   # Test groups of packages using a map
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set8.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set8.yaml
   echo "conf:
   apt:
     packages:
@@ -1381,7 +1495,7 @@ $(printf '%s' "$APT_GPGKEY1" | awk '{printf "          %s\n", $0}')" > "${overri
   echo '[SUCCESS] apt test9 passed successfully' >> "${TEST_RESULTS}"
 
   # Test adding a package in strict mode
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set9.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set9.yaml
   APT_ALL_INSTALLED_PACKAGES="    packages:"
   build_all_packages_yaml $(dpkg -l | awk 'NR>5 {print $2}')
   echo "conf:
@@ -1397,7 +1511,7 @@ $APT_ALL_INSTALLED_PACKAGES
   echo '[SUCCESS] apt test10 passed successfully' >> "${TEST_RESULTS}"
 
   # Test removing a package in strict mode
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set10.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set10.yaml
   # using the same APT_ALL_INSTALLED_PACKAGES from above,
   # which does NOT have APT_PACKAGE1
   echo "conf:
@@ -1415,7 +1529,7 @@ $APT_ALL_INSTALLED_PACKAGES" > "${overrides_yaml}"
 # test exec module
 test_exec(){
   # test script execution ordering, args, and env vars
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set1.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set1.yaml
   echo 'conf:
   exec:
     030-script5.sh:
@@ -1430,7 +1544,7 @@ test_exec(){
       - arg3
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> exec_testfile
+        echo script name: ${BASH_SOURCE[0]} >> exec_testfile
         echo args: "$@" >> exec_testfile
         echo env: "$env1 $env2 $env3" >> exec_testfile
     005-script1.sh:
@@ -1438,20 +1552,20 @@ test_exec(){
       data: |
         #!/bin/bash
         rm exec_testfile 2> /dev/null || true
-        echo script name: ${BASH_SOURCE} >> exec_testfile
+        echo script name: ${BASH_SOURCE[0]} >> exec_testfile
     015-script3.sh:
       blocking_policy: foreground_halt_pod_on_failure
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> exec_testfile
+        echo script name: ${BASH_SOURCE[0]} >> exec_testfile
     008-script2.sh:
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> exec_testfile
+        echo script name: ${BASH_SOURCE[0]} >> exec_testfile
     025-script4.sh:
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> exec_testfile' > "${overrides_yaml}"
+        echo script name: ${BASH_SOURCE[0]} >> exec_testfile' > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
   get_container_status exec
   expected_result='script name: ./005-script1.sh
@@ -1465,7 +1579,7 @@ env: env1-val env2-val env3-val'
   echo '[SUCCESS] exec test1 passed successfully' >> "${TEST_RESULTS}"
 
   # Test blocking_policy
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set2.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set2.yaml
   echo 'conf:
   exec:
     030-script5.sh:
@@ -1480,7 +1594,7 @@ env: env1-val env2-val env3-val'
       - arg3
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> exec_testfile
+        echo script name: ${BASH_SOURCE[0]} >> exec_testfile
         echo args: "$@" >> exec_testfile
         echo env: "$env1 $env2 $env3" >> exec_testfile
     005-script1.sh:
@@ -1488,21 +1602,21 @@ env: env1-val env2-val env3-val'
       data: |
         #!/bin/bash
         rm exec_testfile 2> /dev/null || true
-        echo script name: ${BASH_SOURCE} >> exec_testfile
+        echo script name: ${BASH_SOURCE[0]} >> exec_testfile
     015-script3.sh:
       blocking_policy: foreground_halt_pod_on_failure
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> exec_testfile
+        echo script name: ${BASH_SOURCE[0]} >> exec_testfile
         false
     008-script2.sh:
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> exec_testfile
+        echo script name: ${BASH_SOURCE[0]} >> exec_testfile
     025-script4.sh:
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> exec_testfile' > "${overrides_yaml}"
+        echo script name: ${BASH_SOURCE[0]} >> exec_testfile' > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
   get_container_status exec expect_failure
   expected_result='script name: ./005-script1.sh
@@ -1512,7 +1626,7 @@ script name: ./015-script3.sh'
   echo '[SUCCESS] exec test2 passed successfully' >> "${TEST_RESULTS}"
 
   # Test invalid rerun_policy
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set3.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set3.yaml
   echo 'conf:
   exec:
     030-script5.sh:
@@ -1520,12 +1634,14 @@ script name: ./015-script3.sh'
       data: |
         #!/bin/bash
         true' > "${overrides_yaml}"
-  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .rerun_policy. FOR' || \
-    (echo "[FAIL] exec test3 did not receive expected 'BAD .rerun_policy. FOR' error" && exit 1)
+  if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .rerun_policy. FOR')" ]; then
+    echo "[FAIL] exec test3 did not receive expected 'BAD .rerun_policy. FOR' error" >> "${TEST_RESULTS}"
+    exit 1
+  fi
   echo '[SUCCESS] exec test3 passed successfully' >> "${TEST_RESULTS}"
 
   # Test invalid blocking_policy
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set4.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set4.yaml
   echo 'conf:
   exec:
     030-script5.sh:
@@ -1533,8 +1649,10 @@ script name: ./015-script3.sh'
       data: |
         #!/bin/bash
         true' > "${overrides_yaml}"
-  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .blocking_policy. FOR' || \
-    (echo "[FAIL] exec test4 did not receive expected 'BAD .blocking_policy. FOR' error" && exit 1)
+  if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .blocking_policy. FOR')" ]; then
+    echo "[FAIL] exec test4 did not receive expected 'BAD .blocking_policy. FOR' error" >> "${TEST_RESULTS}"
+    exit 1
+  fi
   echo '[SUCCESS] exec test4 passed successfully' >> "${TEST_RESULTS}"
 
   # Test rerun_policies:
@@ -1545,34 +1663,34 @@ script name: ./015-script3.sh'
   # 5. never
 
   # first execution
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set5.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set5.yaml
   echo 'conf:
   exec:
     001-script1.sh:
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> script1
+        echo script name: ${BASH_SOURCE[0]} >> script1
     002-script2.sh:
       rerun_policy: always
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> script2
+        echo script name: ${BASH_SOURCE[0]} >> script2
     003-script3.sh:
       rerun_policy: once_successfully
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> script3
+        echo script name: ${BASH_SOURCE[0]} >> script3
     004-script4.sh:
       rerun_policy: once_successfully
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> script4
+        echo script name: ${BASH_SOURCE[0]} >> script4
         false
     005-script5.sh:
       rerun_policy: never
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> script5
+        echo script name: ${BASH_SOURCE[0]} >> script5
       env:
         env3: env3-val
         env1: env1-val
@@ -1607,7 +1725,7 @@ manifests:
   done
 
   # test timeout
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set17.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set17.yaml
   echo 'conf:
   exec:
     011-timeout.sh:
@@ -1616,12 +1734,12 @@ manifests:
         #!/bin/bash
         sleep 60' > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
-  get_container_status exec
+  get_container_status exec expect_failure
   _test_clog_msg 'timeout waiting for'
   echo '[SUCCESS] exec test17 passed successfully' >> "${TEST_RESULTS}"
 
   # Test invalid timeout
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set18.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set18.yaml
   echo 'conf:
   exec:
     011-timeout.sh:
@@ -1629,12 +1747,14 @@ manifests:
       data: |
         #!/bin/bash
         sleep 60' > "${overrides_yaml}"
-  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .timeout. FOR' || \
-    (echo "[FAIL] exec test18 did not receive expected 'BAD .timeout. FOR' error" && exit 1)
+  if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .timeout. FOR')" ]; then
+    echo "[FAIL] exec test18 did not receive expected 'BAD .timeout. FOR' error" >> "${TEST_RESULTS}"
+    exit 1
+  fi
   echo '[SUCCESS] exec test18 passed successfully' >> "${TEST_RESULTS}"
 
   # Test invalid rerun_interval (too short)
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set19.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set19.yaml
   echo 'conf:
   exec:
     012-rerun-interval.sh:
@@ -1642,12 +1762,14 @@ manifests:
       data: |
         #!/bin/bash
         true' > "${overrides_yaml}"
-  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .rerun_interval. FOR' || \
-    (echo "[FAIL] exec test19 did not receive expected 'BAD .rerun_interval. FOR' error" && exit 1)
+  if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .rerun_interval. FOR')" ]; then
+    echo "[FAIL] exec test19 did not receive expected 'BAD .rerun_interval. FOR' error" >> "${TEST_RESULTS}"
+    exit 1
+  fi
   echo '[SUCCESS] exec test19 passed successfully' >> "${TEST_RESULTS}"
 
   # Test invalid retry_interval (too short)
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set20.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set20.yaml
   echo 'conf:
   exec:
     012-retry-interval.sh:
@@ -1655,12 +1777,14 @@ manifests:
       data: |
         #!/bin/bash
         true' > "${overrides_yaml}"
-  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .retry_interval. FOR' || \
-    (echo "[FAIL] exec test20 did not receive expected 'BAD .retry_interval. FOR' error" && exit 1)
+  if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .retry_interval. FOR')" ]; then
+    echo "[FAIL] exec test20 did not receive expected 'BAD .retry_interval. FOR' error" >> "${TEST_RESULTS}"
+    exit 1
+  fi
   echo '[SUCCESS] exec test20 passed successfully' >> "${TEST_RESULTS}"
 
   # Test invalid rerun_interval combination
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set21.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set21.yaml
   echo 'conf:
   exec:
     012-rerun-interval.sh:
@@ -1669,12 +1793,14 @@ manifests:
       data: |
         #!/bin/bash
         true' > "${overrides_yaml}"
-  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD COMBINATION' || \
-    (echo "[FAIL] exec test21 did not receive expected 'BAD COMBINATION' error" && exit 1)
+  if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD COMBINATION')" ]; then
+    echo "[FAIL] exec test21 did not receive expected 'BAD COMBINATION' error" >> "${TEST_RESULTS}"
+    exit 1
+  fi
   echo '[SUCCESS] exec test21 passed successfully' >> "${TEST_RESULTS}"
 
   # Test invalid retry_interval combination
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set22.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set22.yaml
   echo 'conf:
   exec:
     012-retry-interval.sh:
@@ -1683,19 +1809,21 @@ manifests:
       data: |
         #!/bin/bash
         true' > "${overrides_yaml}"
-  install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD COMBINATION' || \
-    (echo "[FAIL] exec test22 did not receive expected 'BAD COMBINATION' error" && exit 1)
+  if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD COMBINATION')" ]; then
+    echo "[FAIL] exec test22 did not receive expected 'BAD COMBINATION' error" >> "${TEST_RESULTS}"
+    exit 1
+  fi
   echo '[SUCCESS] exec test22 passed successfully' >> "${TEST_RESULTS}"
 
   # test rerun_interval
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set23.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set23.yaml
   echo 'conf:
   exec:
     012-rerun-interval.sh:
       rerun_interval: 60
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> exec_testfile' > "${overrides_yaml}"
+        echo script name: ${BASH_SOURCE[0]} >> exec_testfile' > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
   get_container_status exec
   sleep 75
@@ -1706,14 +1834,14 @@ script name: ./012-rerun-interval.sh'
   echo '[SUCCESS] exec test23 passed successfully' >> "${TEST_RESULTS}"
 
   # test retry_interval
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-set24.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set24.yaml
   echo 'conf:
   exec:
     012-retry-interval.sh:
       retry_interval: 60
       data: |
         #!/bin/bash
-        echo script name: ${BASH_SOURCE} >> exec_testfile
+        echo script name: ${BASH_SOURCE[0]} >> exec_testfile
         false' > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
   get_container_status exec
@@ -1727,7 +1855,7 @@ script name: ./012-retry-interval.sh'
 
 # test daemonset value overrides for hosts and labels
 test_overrides(){
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-dryrun.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-dryrun.yaml
   echo "conf:
   sysctl:
     net.ipv4.ip_forward: 1
@@ -1819,9 +1947,9 @@ test_overrides(){
   tc_output="$(dry_run_base "--values=${overrides_yaml}")"
 
   # Compare against expected number of generated daemonsets
-  daemonset_count="$(echo "${tc_output}" | grep 'kind: DaemonSet' | wc -l)"
+  daemonset_count="$(echo "${tc_output}" | grep -c 'kind: DaemonSet')"
   if [ "${daemonset_count}" != "${EXPECTED_NUMBER_OF_DAEMONSETS}" ]; then
-    echo '[FAILURE] overrides test 1 failed' >> "${TEST_RESULTS}"
+    echo '[FAIL] overrides test 1 failed' >> "${TEST_RESULTS}"
     echo "Expected ${EXPECTED_NUMBER_OF_DAEMONSETS} daemonsets; got '${daemonset_count}'" >> "${TEST_RESULTS}"
     exit 1
   else
@@ -1832,7 +1960,7 @@ test_overrides(){
   # ordering.
 
   # Verify generated affinity for another_label
-  echo "${tc_output}" | grep '    spec:
+  affinity_match_2=$(echo "${tc_output}" | grep '    spec:
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -1853,12 +1981,15 @@ test_overrides(){
               - key: kubernetes.io/hostname
                 operator: NotIn
                 values:
-                - "specialhost"' &&
-  echo '[SUCCESS] overrides test 2 passed successfully' >> "${TEST_RESULTS}" ||
-  (echo '[FAILURE] overrides test 2 failed' && exit 1)
+                - "specialhost"')
+  if [ -z "${affinity_match_2}" ]; then
+    echo '[FAIL] overrides test 2 failed' >> "${TEST_RESULTS}"
+    exit 1
+  fi
+  echo '[SUCCESS] overrides test 2 passed successfully' >> "${TEST_RESULTS}"
 
   # Verify generated affinity for compute_type
-  echo "${tc_output}" | grep '    spec:
+  affinity_match_3=$(echo "${tc_output}" | grep '    spec:
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -1883,12 +2014,15 @@ test_overrides(){
               - key: kubernetes.io/hostname
                 operator: NotIn
                 values:
-                - "specialhost"' &&
-  echo '[SUCCESS] overrides test 3 passed successfully' >> "${TEST_RESULTS}" ||
-  (echo '[FAILURE] overrides test 3 failed' && exit 1)
+                - "specialhost"')
+  if [ -z "${affinity_match_3}" ]; then
+    echo '[FAIL] overrides test 3 failed' >> "${TEST_RESULTS}"
+    exit 1
+  fi
+  echo '[SUCCESS] overrides test 3 passed successfully' >> "${TEST_RESULTS}"
 
   # Verify generated affinity for compute_type
-  echo "${tc_output}" | grep '    spec:
+  affinity_match_4=$(echo "${tc_output}" | grep '    spec:
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -1918,12 +2052,15 @@ test_overrides(){
               - key: kubernetes.io/hostname
                 operator: NotIn
                 values:
-                - "specialhost"' &&
-  echo '[SUCCESS] overrides test 4 passed successfully' >> "${TEST_RESULTS}" ||
-  (echo '[FAILURE] overrides test 4 failed' && exit 1)
+                - "specialhost"')
+  if [ -z "${affinity_match_4}" ]; then
+    echo '[FAIL] overrides test 4 failed' >> "${TEST_RESULTS}"
+    exit 1
+  fi
+  echo '[SUCCESS] overrides test 4 passed successfully' >> "${TEST_RESULTS}"
 
   # Verify generated affinity for one of the daemonset hosts
-  echo "${tc_output}" | grep '    spec:
+  affinity_match_5=$(echo "${tc_output}" | grep '    spec:
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -1933,12 +2070,15 @@ test_overrides(){
                 operator: In
                 values:
                 - "soup"
-                - "chips"' &&
-  echo '[SUCCESS] overrides test 5 passed successfully' >> "${TEST_RESULTS}" ||
-  (echo '[FAILURE] overrides test 5 failed' && exit 1)
+                - "chips"')
+  if [ -z "${affinity_match_5}" ]; then
+    echo '[FAIL] overrides test 5 failed' >> "${TEST_RESULTS}"
+    exit 1
+  fi
+  echo '[SUCCESS] overrides test 5 passed successfully' >> "${TEST_RESULTS}"
 
   # Verify generated affinity for one of the daemonset defaults
-  echo "${tc_output}" | grep '    spec:
+  affinity_match_6=$(echo "${tc_output}" | grep '    spec:
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -1968,16 +2108,19 @@ test_overrides(){
               - key: another_label
                 operator: NotIn
                 values:
-                - "another_value"' &&
-  echo '[SUCCESS] overrides test 6 passed successfully' >> "${TEST_RESULTS}" ||
-  (echo '[FAILURE] overrides test 6 failed' && exit 1)
+                - "another_value"')
+  if [ -z "${affinity_match_6}" ]; then
+    echo '[FAIL] overrides test 6 failed' >> "${TEST_RESULTS}"
+    exit 1
+  fi
+  echo '[SUCCESS] overrides test 6 passed successfully' >> "${TEST_RESULTS}"
 
   # The core functional test to ensure that overrides work.
   # fooKey was added to catch a corner case identified by:
   # https://storyboard.openstack.org/#!/story/2005936
   # If fooHost keys are leaking into this host's values, then this test
   # will fail when sysctl attempts to set the non-existant fooKey.
-  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-functional.yaml
+  overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-functional.yaml
   key1_override_val=0
   key2_non_override_val=0
   kube_hostname="$(kubectl describe nodes | grep kubernetes.io/hostname | head -1 | cut -d'=' -f2)" || true
@@ -2004,11 +2147,9 @@ test_overrides(){
             $SYSCTL_KEY1: $key1_override_val" > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
   get_container_status sysctl
-  _test_sysctl_default $SYSCTL_KEY1 $key1_override_val || \
-  (echo '[FAILURE] overrides test 7 failed, most likely someone broke openstack-helm-infra/helm-toolkit/templates/utils/_daemonset_overrides.tpl' && exit 1)
+  _test_sysctl_default $SYSCTL_KEY1 $key1_override_val
   _test_sysctl_default $SYSCTL_KEY2 $key2_non_override_val
   echo '[SUCCESS] overrides test 7 passed successfully' >> "${TEST_RESULTS}"
-
 }
 
 _test_apparmor_profile_added(){
@@ -2018,16 +2159,19 @@ _test_apparmor_profile_added(){
   local persist_path='/etc/apparmor.d'
 
   if [ ! -f "${defaults_path}/${profile_file}" ]; then
-    return 1
+    echo "[FAIL] Expected AppArmor profile ${profile_file} to be found on the defaults path ${defaults_path}, but it was not." >> "${TEST_RESULTS}"
+    exit 1
   fi
   if [ ! -L "${persist_path}/${profile_file}" ]; then
-    return 1
+    echo "[FAIL] Expected symlink to AppArmor profile ${profile_file} to be found on the persist path ${persist_path}, but it was not." >> "${TEST_RESULTS}"
+    exit 1
   fi
 
   profile_loaded=$(grep $profile_name /sys/kernel/security/apparmor/profiles || : )
 
   if [ -z "$profile_loaded" ]; then
-    return 1
+    echo "[FAIL] Expected AppArmor profile ${profile_file} to be loaded, but it is not." >> "${TEST_RESULTS}"
+    exit 1
   fi
   return 0
 }
@@ -2039,29 +2183,33 @@ _test_apparmor_profile_removed(){
   local persist_path='/etc/apparmor.d'
 
   if [ -f "${defaults_path}/${profile_file}" ]; then
-    return 1
+    echo "[FAIL] Expected AppArmor profile ${profile_file} to be removed from the defaults path ${defaults_path}, but it was not." >> "${TEST_RESULTS}"
+    exit 1
   fi
   if [ -L "${persist_path}/${profile_file}" ]; then
-    return 1
+    echo "[FAIL] Expected symlink to AppArmor profile ${profile_file} to be removed from the persist path ${persist_path}, but it was not." >> "${TEST_RESULTS}"
+    exit 1
   fi
 
   profile_loaded=$(grep $profile_name /sys/kernel/security/apparmor/profiles || : )
 
-  if [ ! -z "$profile_loaded" ]; then
-    return 1
+  if [ -n "$profile_loaded" ]; then
+    echo "[FAIL] Expected AppArmor profile ${profile_file} to be removed, but it is not." >> "${TEST_RESULTS}"
+    exit 1
   fi
 
   reboot_message_present=$(grep $profile_file /var/run/reboot-required.pkgs || : )
 
   if [ -z "$reboot_message_present" ]; then
-    return 1
+    echo "[FAIL] Expected removed AppArmor profile ${profile_file} to be found in the reboot-required.pkgs file, but it is not." >> "${TEST_RESULTS}"
+    exit 1
   fi
 
   return 0
 }
 
 test_apparmor(){
-  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME}-apparmor.yaml
+  local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-apparmor.yaml
 
   #Test1 - check new profile added and loaded
   echo "conf:
