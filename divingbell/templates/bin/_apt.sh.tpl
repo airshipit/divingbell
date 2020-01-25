@@ -115,12 +115,20 @@ dpkg --configure -a
 
 # Perform package installs
 set +x
+{{- if .Values.conf.apt.strict }}
+{{- range $all_apt_packages }}
+{{- $pkg_name := .name }}
+INSTALLED_THIS_TIME="$INSTALLED_THIS_TIME {{$pkg_name}} {{- if .version }}={{ .version }}{{ end }}"
+REQUESTED_PACKAGES="$REQUESTED_PACKAGES {{$pkg_name}}"
+{{- end }}
+{{- else }}
 {{- range $all_apt_packages }}
 {{- $pkg_name := .name }}
 if [[ "${CURRENT_PACKAGES[{{ .name | squote }}]+isset}" != "isset"{{- if .version }} || "${CURRENT_PACKAGES[{{ .name | squote }}]}" != {{ .version }}{{- end }} ]]; then
     INSTALLED_THIS_TIME="$INSTALLED_THIS_TIME {{$pkg_name}} {{- if .version }}={{ .version }}{{ end }}"
 fi
 REQUESTED_PACKAGES="$REQUESTED_PACKAGES {{$pkg_name}}"
+{{- end }}
 {{- end }}
 set -x
 # Run this in case some package installation was interrupted
@@ -144,7 +152,9 @@ fi
 ################################################
 
 {{- if .Values.conf.apt.strict }}
-APT_PURGE="apt-get purge -y --autoremove --allow-remove-essential"
+# For strict mode, we do not want to use --autoremove, to avoid
+# letting apt remove packages outside divingbell's control
+APT_PURGE="apt-get purge -y --allow-remove-essential"
 {{- else }}
 APT_PURGE="apt-get purge -y --autoremove"
 {{- end }}
