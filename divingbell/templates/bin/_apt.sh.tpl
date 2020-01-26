@@ -193,9 +193,26 @@ if [ -f ${persist_path}/packages ]; then
     {{- end }}
     if [ ! -z "$TO_DELETE" ]; then
         dpkg --configure -a
+
+        {{- if hasKey .Values.conf.apt "whitelistpkgs" }}
+        WHITELIST=({{ include "helm-toolkit.utils.joinListWithSpace" .Values.conf.apt.whitelistpkgs }})
+        {{- end }}
         PURGE_LIST=""
         while read -r pkg; do
+            {{- if hasKey .Values.conf.apt "whitelistpkgs" }}
+            found=false
+            for item in "${WHITELIST[@]}"; do
+                if [[ "${item}" == "${pkg}" ]]; then
+                    found=true
+                    break
+                fi
+            done
+            if [[ "${found}" == "false" ]]; then
+                PURGE_LIST="$PURGE_LIST $pkg"
+            fi
+            {{- else }}
             PURGE_LIST="$PURGE_LIST $pkg"
+            {{- end }}
         done <<< "$TO_DELETE"
         DEBIAN_FRONTEND=noninteractive $APT_PURGE $PURGE_LIST
     fi
