@@ -132,7 +132,7 @@ REQUESTED_PACKAGES="$REQUESTED_PACKAGES {{$pkg_name}}"
 {{- end }}
 set -x
 # Run this in case some package installation was interrupted
-DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold {{- if .Values.conf.apt.allow_downgrade }} "--allow-downgrades" {{ end }}{{- if .repo }} -t {{ .repo }}{{ end }} $INSTALLED_THIS_TIME
+DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold {{- if .Values.conf.apt.allow_downgrade }} "--allow-downgrades" {{ end }}{{- if .repo }} -t {{ .repo }}{{ end }} $INSTALLED_THIS_TIME
 {{- end }}
 
 # Perform package upgrades
