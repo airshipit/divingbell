@@ -96,6 +96,26 @@ conf:
 #      item: 'core'
 #      value: 0
 pod:
+  mandatory_access_control:
+    type: apparmor
+    divingbell-apparmor:
+      apparmor: runtime/default
+    divingbell-apt:
+      apt: runtime/default
+    divingbell-ethtool:
+      ethtool: runtime/default
+    divingbell-exec:
+      exec: runtime/default
+    divingbell-limits:
+      limits: runtime/default
+    divingbell-mounts:
+      mounts: runtime/default
+    divingbell-perm:
+      perm: runtime/default
+    divingbell-sysctl:
+      sysctl: runtime/default
+    divingbell-uamlite:
+      uamlite: runtime/default
   lifecycle:
     upgrades:
       daemonsets:

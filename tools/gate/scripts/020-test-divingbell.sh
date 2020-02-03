@@ -281,6 +281,7 @@ EXEC_DIR=/var/${NAME}/exec
 EXPECTED_NUMBER_OF_DAEMONSETS=17
 type lshw || apt -y install lshw
 type apparmor_parser || apt -y install apparmor
+type ethtool || apt -y install ethtool
 nic_info="$(lshw -class network)"
 physical_nic=''
 IFS=$'\n'

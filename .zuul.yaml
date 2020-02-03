@@ -73,6 +73,7 @@
     vars:
       zuul_osh_infra_relative_path: ../../openstack/openstack-helm-infra/
       gate_scripts:
+        - "{{ zuul_osh_infra_relative_path }}./tools/deployment/apparmor/001-setup-apparmor-profiles.sh"
         - "{{ zuul_osh_infra_relative_path }}./tools/deployment/common/005-deploy-k8s.sh"
         - ./tools/gate/scripts/010-build-charts.sh
         - sudo ./tools/gate/scripts/020-test-divingbell.sh
