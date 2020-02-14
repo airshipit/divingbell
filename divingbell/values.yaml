@@ -116,6 +116,48 @@ pod:
       sysctl: runtime/default
     divingbell-uamlite:
       uamlite: runtime/default
+  security_context:
+    divingbell:
+      pod:
+        runAsUser: 65534
+      container:
+        apt:
+          readOnlyRootFilesystem: true
+          runAsUser: 0
+          privileged: true
+        apparmor:
+          capabilities:
+            add:
+              - 'MAC_ADMIN'
+          readOnlyRootFilesystem: true
+          runAsUser : 0
+        ethtool:
+          capabilities:
+            add:
+              - 'NET_ADMIN'
+          readOnlyRootFilesystem: true
+          runAsUser : 0
+        exec:
+          readOnlyRootFilesystem: true
+          runAsUser: 0
+          privileged: true
+        limits:
+          readOnlyRootFilesystem: true
+          runAsUser: 0
+        mounts:
+          readOnlyRootFilesystem: true
+          runAsUser: 0
+        perm:
+          readOnlyRootFilesystem: true
+          runAsUser: 0
+        sysctl:
+          capabilities:
+            add:
+              - 'SYS_PTRACE'
+              - 'SYS_ADMIN'
+              - 'SYS_RAWIO'
+          readOnlyRootFilesystem: true
+          runAsUser: 0
   lifecycle:
     upgrades:
       daemonsets:
