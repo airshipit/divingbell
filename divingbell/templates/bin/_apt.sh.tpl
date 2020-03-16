@@ -111,7 +111,7 @@ DEBIAN_FRONTEND=noninteractive apt-get update
 {{- end }}
 
 # Run dpkg in case of interruption of previous dpkg operation
-dpkg --configure -a
+dpkg --configure -a --force-confold,confdef
 
 # Perform package installs
 set +x
@@ -192,7 +192,7 @@ if [ -f ${persist_path}/packages ]; then
     TO_KEEP=$(echo "$TO_DELETE" | comm -23 ${persist_path}/packages -)
     {{- end }}
     if [ ! -z "$TO_DELETE" ]; then
-        dpkg --configure -a
+        dpkg --configure -a --force-confold,confdef
 
         {{- if hasKey .Values.conf.apt "whitelistpkgs" }}
         WHITELIST=({{ include "helm-toolkit.utils.joinListWithSpace" .Values.conf.apt.whitelistpkgs }})
@@ -236,7 +236,7 @@ fi
 ######################################################
 
 {{- if hasKey .Values.conf.apt "blacklistpkgs" }}
-dpkg --configure -a
+dpkg --configure -a --force-confold,confdef
 {{- range .Values.conf.apt.blacklistpkgs }}
   {{- $package := . }}
   DEBIAN_FRONTEND=noninteractive $APT_PURGE {{ $package | squote }}
