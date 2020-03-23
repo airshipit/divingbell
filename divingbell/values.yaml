@@ -232,6 +232,7 @@ manifests:
   daemonset_sysctl: true
   daemonset_limits: true
   daemonset_apt: true
+  daemonset_apt_remove_old_pkgs: true
   daemonset_perm: true
   daemonset_exec: true
   daemonset_apparmor: true

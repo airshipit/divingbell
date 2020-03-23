@@ -159,6 +159,7 @@ APT_PURGE="apt-get purge -y --allow-remove-essential"
 APT_PURGE="apt-get purge -y --autoremove"
 {{- end }}
 
+{{- if .Values.manifests.daemonset_apt_remove_old_pkgs }}
 {{- if hasKey .Values.conf.apt "packages" }}
 {{- if .Values.conf.apt.strict }}
 # in strict mode we execute this stage even on first run, so
@@ -228,6 +229,7 @@ if [ ! -z "$INSTALLED_THIS_TIME" ]; then
 {{- end }}
     sort ${persist_path}/packages -o ${persist_path}/packages
 fi
+{{- end }}
 {{- end }}
 
 ######################################################
