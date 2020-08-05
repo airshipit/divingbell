@@ -72,6 +72,7 @@
     run: tools/gate/playbooks/osh-infra-gate-runner.yaml
     vars:
       zuul_osh_infra_relative_path: ../../openstack/openstack-helm-infra/
+      gate_scripts_relative_path: ""
       gate_scripts:
         - "{{ zuul_osh_infra_relative_path }}./tools/deployment/apparmor/001-setup-apparmor-profiles.sh"
         - "{{ zuul_osh_infra_relative_path }}./tools/deployment/common/005-deploy-k8s.sh"

@@ -83,6 +83,9 @@ APT_PACKAGE5=python-setuptools
 APT_PACKAGE6=telnetd
 APT_PACKAGE7=sudoku
 APT_PACKAGE8=ninvaders
+# APT_PACKAGE9 should be a package that has no dependencies that aren't in the base image,
+# or strict mode test cases will fail
+APT_PACKAGE9=libxau6
 # helper function to generate a yaml config for all installed packages
 APT_YAML_SEPARATOR=$'\n    - name: '
 build_all_packages_yaml(){
@@ -450,13 +453,15 @@ get_container_status(){
   local container_runtime_sleep_interval=5
   wait_time=0
   while : ; do
+    # don't echo the entire log every time we check - it bogs down the test script
+    # and causes problems with zuul
+    set +x
     CLOGS="$(kubectl logs --namespace="${NAME}" "${container}" 2>&1)" || true
     # the test below now looks at the last ten lines of the log rather than
     # just the last line, since there are cases where other things have to get
     # logged after the error / success message.
-    # also: trying printf here to avoid arcane SIGTERM/SIGPIPE problems with
-    # builtin echo.
-    status="$(printf '%s' "${CLOGS}" | tail -n 10)"
+    status="$(echo -e ${CLOGS} | tail -n 10)"
+    set -x
     if [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *ERROR* ]] ||
        [[ $(echo -e ${status} | tr -d '[:cntrl:]') = *TRACE* ]]; then
       if [ "${2}" = 'expect_failure' ]; then
@@ -493,8 +498,15 @@ get_container_status(){
   done
 }
 
+# helper function to echo the pod log for debugging after a failure
+_dump_pod_log_on_secondary_fail(){
+  echo '[FAIL] pod logs:' >> "${TEST_RESULTS}"
+  printf '%s' "${CLOGS}" >> "${TEST_RESULTS}"
+}
+
 _test_sysctl_default(){
   if [ "$(/sbin/sysctl "${1}" | cut -d'=' -f2 | tr -d '[:space:]')" != "${2}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected kernel parameter ${1} to be set to ${2}, but it was not." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -504,6 +516,7 @@ _test_sysctl_value(){
   _test_sysctl_default "${1}" "${2}"
   local key="${1//\//.}"
   if [ "$(cat /etc/sysctl.d/60-${NAME}-${key}.conf)" != "${key}=${2}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected kernel parameter ${key}=${2} to be persisted in /etc/sysctl.d, but it was not." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -514,6 +527,7 @@ _test_exec_match(){
   exec_testfile="$2"
   testID="$3"
   if [[ $expected_result != $(cat $exec_testfile) ]]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] exec $testID failed. Expected:" >> "${TEST_RESULTS}"
     echo $expected_result >> "${TEST_RESULTS}"
     echo "but got:" >> "${TEST_RESULTS}"
@@ -529,6 +543,7 @@ _test_exec_count(){
   script_expected_run_count="${3}"
   script_run_count=$(wc -l "${script_location}")
   if [[ ${script_run_count} -ne ${script_expected_run_count} ]]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected '${script_name}' to run '${script_expected_run_count}' times, but instead it ran '$script_run_count' times" >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -536,6 +551,7 @@ _test_exec_count(){
 
 _test_clog_msg(){
   if [[ $CLOGS != *${1}* ]]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Did not find expected string: '${1}'" >> "${TEST_RESULTS}"
     echo "in container logs:" >> "${TEST_RESULTS}"
     printf '%s' "${CLOGS}" >> "${TEST_RESULTS}"
@@ -670,14 +686,17 @@ _test_perm_value(){
   r_group="$(stat -c %G ${file})"
   r_perm="$(stat -c %a ${file})"
   if [ "${perm}" != "${r_perm}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] File ${file} has permissions ${r_perm} but expected ${perm}" >> "${TEST_RESULTS}"
     exit 1
   fi
   if [ "${owner}" != "${r_owner}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] File ${file} has owner ${r_owner} but expected ${owner}" >> "${TEST_RESULTS}"
     exit 1
   fi
   if [ "${group}" != "${r_group}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] File ${file} has group ${r_group} but expected ${group}" >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -762,6 +781,7 @@ test_perm(){
       group: 'shadow'
       permissions: '0640'" > "${overrides_yaml}"
   if [ -z "$(install_base "--values=${overrides_yaml}" |& grep 'BAD .rerun_interval. Got')" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] perm test invalid rerun_interval value did not receive expected 'BAD .rerun_interval. Got' error" >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -778,6 +798,7 @@ test_perm(){
       group: 'shadow'
       permissions: '0640'" > "${overrides_yaml}"
   if [ -z "$(install_base "--values=${overrides_yaml}" |& grep 'BAD COMBINATION')" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] perm invalid rerun_interval combination did not receive expected 'BAD COMBINATION' error" >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -803,16 +824,19 @@ test_perm(){
 
 _test_if_mounted_positive(){
   if ! mountpoint "${1}"; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected ${1} to be mounted, but it is not." >> "${TEST_RESULTS}"
     exit 1
   fi
   if [ -z "$(df -h | grep ${1} | grep ${2})" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected to find mount size of ${2} for mountpoint ${1} in mount table, but did not." >> "${TEST_RESULTS}"
     exit 1
   fi
   __set_systemd_name "${1}" mount
 
   if ! systemctl is-enabled "${SYSTEMD_NAME}"; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected ${SYSTEMD_NAME} to be flagged to start on boot, but it is not." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -820,11 +844,13 @@ _test_if_mounted_positive(){
 
 _test_if_mounted_negative(){
   if mountpoint "${1}"; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected ${1} not to be mounted, but it was." >> "${TEST_RESULTS}"
     exit 1
   fi
   __set_systemd_name "${1}" mount
   if systemctl is-enabled "${SYSTEMD_NAME}"; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected ${SYSTEMD_NAME} not to be flagged to start on boot, but it is." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1038,6 +1064,7 @@ _test_user_enabled(){
 
   # verify the user exists
   if ! getent passwd "${username}" >& /dev/null; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected user ${username} to exist, but it does not." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1045,6 +1072,7 @@ _test_user_enabled(){
     # verify the user is not set to expired
     if [ "$(chage -l ${username} | grep 'Account expires' | cut -d':' -f2 |
             tr -d '[:space:]')" != "never" ]; then
+      _dump_pod_log_on_secondary_fail
       echo "[FAIL] Expected user ${username} to be set to non-expired, but it was not." >> "${TEST_RESULTS}"
       exit 1
     fi
@@ -1052,6 +1080,7 @@ _test_user_enabled(){
     # Verify user is set to expired (@ t=1, 2 Jan 1970)
     if [ "$(chage -l ${username} | grep 'Account expires' | cut -d':' -f2 |
             tr -d '[:space:]')" != "Jan02,1970" ]; then
+      _dump_pod_log_on_secondary_fail
       echo "[FAIL] Expected user ${username} to be set to expired, but it was not." >> "${TEST_RESULTS}"
       exit 1
     fi
@@ -1063,11 +1092,13 @@ _test_user_purged(){
 
   # Verify user is no longer defined
   if getent passwd "${username}" >& /dev/null; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected user ${username} to be purged, but it was not."  >> "${TEST_RESULTS}"
     exit 1
   fi
 
   if [ -d "/home/${username}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected home directory for user ${username} to be removed, but it was not." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1080,10 +1111,12 @@ _test_sudo_enabled(){
   sudoers_file=$(ls -l /etc/sudoers.d | grep "${keyword}-${username}-sudo" | head -n 1)
 
   if [ "${sudo_enable}" = "true" ] && [ -z "$sudoers_file" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected user ${username} to have a file named ${keyword}-${username}-sudo in the sudoers directory, but it does not." >> "${TEST_RESULTS}"
     exit 1
   fi
   if [ "${sudo_enable}" != "true" ] && [ -n "$sudoers_file" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected user ${username} to have no file named ${keyword}-${username}-sudo in the sudoers directory, but it has one." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1096,11 +1129,13 @@ _test_ssh_keys(){
 
   if [ "$sshkey" = "false" ]; then
     if [ -f "${ssh_file}" ]; then
+    _dump_pod_log_on_secondary_fail
       echo "[FAIL] Expected user ${username} to have no .ssh/authorized_keys file, but it has one." >> "${TEST_RESULTS}"
       exit 1
     fi
   else
     if [ -z "$(grep ${sshkey} ${ssh_file})" ]; then
+    _dump_pod_log_on_secondary_fail
       echo "[FAIL] Expected user ${username} to have ssh key ${sshkey}, but it does not." >> "${TEST_RESULTS}"
       exit 1
     fi
@@ -1112,6 +1147,7 @@ _test_user_passwd(){
   crypt_passwd="$2"
 
   if [ "$crypt_passwd" != "$(getent shadow $username | cut -d':' -f2)" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected user ${username} to have password ${crypt_passwd}, but it did not." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1237,6 +1273,7 @@ test_uamlite(){
     - user_name: ${USERNAME2}
       user_crypt_passwd: ${user2_crypt_passwd_invalid}" > "${overrides_yaml}"
   if [ -z "$(install_base "--values=${overrides_yaml}" |& grep 'BAD PASSWORD')" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] uamlite test5 did not receive expected 'BAD PASSWORD' error." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1254,6 +1291,7 @@ test_uamlite(){
       - ${user2_bad_sshkey}
       - ${USERNAME2_SSHKEY3}" > "${overrides_yaml}"
   if [ -z "$(install_base "--values=${overrides_yaml}" |& grep 'BAD SSH KEY')" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] uamlite test6 did not receive expected 'BAD SSH KEY' error." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1266,16 +1304,19 @@ _test_apt_package_version(){
   if [ "${pkg_ver}" = "none" ]; then
     # Does not include residual-config
     if [ -n "$(dpkg -l | grep ${pkg_name} | grep -v ^rc)" ]; then
+      _dump_pod_log_on_secondary_fail
       echo "[FAIL] Expected package ${pkg_name} not to be installed, but it was." >> "${TEST_RESULTS}"
       exit 1
     fi
   elif [ "${pkg_ver}" = "any" ]; then
     if [ -z "$(dpkg -l | grep ${pkg_name})" ]; then
+      _dump_pod_log_on_secondary_fail
       echo "[FAIL] Expected package ${pkg_name} to be installed, but it wasn't." >> "${TEST_RESULTS}"
       exit 1
     fi
   else
     if [ $(dpkg -l | awk "/[[:space:]]${pkg_name}[[:space:]]/"'{print $3}') != "${pkg_ver}" ]; then
+      _dump_pod_log_on_secondary_fail
       echo "[FAIL] Expected package ${pkg_name} version ${pkg_ver} to be installed, but it wasn't." >> "${TEST_RESULTS}"
       exit 1
     fi
@@ -1289,6 +1330,7 @@ _test_apt_repositories(){
   do
     if ! grep -qrh "$repository" /etc/apt/sources.list /etc/apt/sources.list.d/*
     then
+      _dump_pod_log_on_secondary_fail
       echo "[FAIL] Expected repository ${repository} to be added, but it wasn't." >> "${TEST_RESULTS}"
       exit 1
     fi
@@ -1296,6 +1338,7 @@ _test_apt_repositories(){
   remaining_repos=$(grep -qrh "^deb" /etc/apt/sources.list /etc/apt/sources.list.d/* | sort -u | grep -v "${repositories// /\\|}" | awk '{print$2}')
   for repo in $remaining_repos
   do
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected repository ${repo} not to be added, but it was." >> "${TEST_RESULTS}"
     exit 1
   done
@@ -1317,6 +1360,7 @@ _test_apt_keys(){
   do
     if [ -z "$(apt-key list | grep "$key")" ]
     then
+      _dump_pod_log_on_secondary_fail
       echo "[FAIL] The gpg key starting with (${key}) was not installed." >> "${TEST_RESULTS}"
       exit 1
     fi
@@ -1324,6 +1368,7 @@ _test_apt_keys(){
   remaining_keys=$(apt-key list | grep -A 1 "^pub" | grep -v "^pub" | grep -v -x "\-\-" | grep -v "${keys// /\\|}" | awk '{print$1}')
   for rkey in $remaining_keys
   do
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] The gpg key starting with (${rkey}) should not be installed." >> "${TEST_RESULTS}"
     exit 1
   done
@@ -1367,6 +1412,7 @@ test_apt(){
   # Each entry in passwords.dat contains question value in Name and Template
   # field, so grepping root_password should return 4 lines
   if [[ $(grep -c root_password /var/cache/debconf/passwords.dat) != 4 ]]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Package $APT_PACKAGE2 should have debconf values configured" >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1502,10 +1548,10 @@ $(printf '%s' "$APT_GPGKEY1" | awk '{printf "          %s\n", $0}')" > "${overri
   apt:
     strict: true
 $APT_ALL_INSTALLED_PACKAGES
-    - name: $APT_PACKAGE1" > "${overrides_yaml}"
+    - name: $APT_PACKAGE9" > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
   get_container_status apt
-  _test_apt_package_version $APT_PACKAGE1 any
+  _test_apt_package_version $APT_PACKAGE9 any
   # PACKAGE4 used earlier is intended to be a package that is always installed
   _test_apt_package_version $APT_PACKAGE4 any
   echo '[SUCCESS] apt test10 passed successfully' >> "${TEST_RESULTS}"
@@ -1513,14 +1559,14 @@ $APT_ALL_INSTALLED_PACKAGES
   # Test removing a package in strict mode
   local overrides_yaml=${LOGS_SUBDIR}/${FUNCNAME[0]}-set10.yaml
   # using the same APT_ALL_INSTALLED_PACKAGES from above,
-  # which does NOT have APT_PACKAGE1
+  # which does NOT have APT_PACKAGE9
   echo "conf:
   apt:
     strict: true
 $APT_ALL_INSTALLED_PACKAGES" > "${overrides_yaml}"
   install_base "--values=${overrides_yaml}"
   get_container_status apt
-  _test_apt_package_version $APT_PACKAGE1 none
+  _test_apt_package_version $APT_PACKAGE9 none
   # PACKAGE4 used earlier is intended to be a package that is always installed
   _test_apt_package_version $APT_PACKAGE4 any
   echo '[SUCCESS] apt test11 passed successfully' >> "${TEST_RESULTS}"
@@ -1635,6 +1681,7 @@ script name: ./015-script3.sh'
         #!/bin/bash
         true' > "${overrides_yaml}"
   if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .rerun_policy. FOR')" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] exec test3 did not receive expected 'BAD .rerun_policy. FOR' error" >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1650,6 +1697,7 @@ script name: ./015-script3.sh'
         #!/bin/bash
         true' > "${overrides_yaml}"
   if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .blocking_policy. FOR')" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] exec test4 did not receive expected 'BAD .blocking_policy. FOR' error" >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1748,6 +1796,7 @@ manifests:
         #!/bin/bash
         sleep 60' > "${overrides_yaml}"
   if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .timeout. FOR')" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] exec test18 did not receive expected 'BAD .timeout. FOR' error" >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1763,6 +1812,7 @@ manifests:
         #!/bin/bash
         true' > "${overrides_yaml}"
   if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .rerun_interval. FOR')" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] exec test19 did not receive expected 'BAD .rerun_interval. FOR' error" >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1778,6 +1828,7 @@ manifests:
         #!/bin/bash
         true' > "${overrides_yaml}"
   if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD .retry_interval. FOR')" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] exec test20 did not receive expected 'BAD .retry_interval. FOR' error" >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1794,6 +1845,7 @@ manifests:
         #!/bin/bash
         true' > "${overrides_yaml}"
   if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD COMBINATION')" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] exec test21 did not receive expected 'BAD COMBINATION' error" >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1810,6 +1862,7 @@ manifests:
         #!/bin/bash
         true' > "${overrides_yaml}"
   if [ -z "$(install_base "--values=${overrides_yaml}" 2>&1 | grep 'BAD COMBINATION')" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] exec test22 did not receive expected 'BAD COMBINATION' error" >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -1949,6 +2002,7 @@ test_overrides(){
   # Compare against expected number of generated daemonsets
   daemonset_count="$(echo "${tc_output}" | grep -c 'kind: DaemonSet')"
   if [ "${daemonset_count}" != "${EXPECTED_NUMBER_OF_DAEMONSETS}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo '[FAIL] overrides test 1 failed' >> "${TEST_RESULTS}"
     echo "Expected ${EXPECTED_NUMBER_OF_DAEMONSETS} daemonsets; got '${daemonset_count}'" >> "${TEST_RESULTS}"
     exit 1
@@ -1983,6 +2037,7 @@ test_overrides(){
                 values:
                 - "specialhost"')
   if [ -z "${affinity_match_2}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo '[FAIL] overrides test 2 failed' >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -2016,6 +2071,7 @@ test_overrides(){
                 values:
                 - "specialhost"')
   if [ -z "${affinity_match_3}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo '[FAIL] overrides test 3 failed' >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -2054,6 +2110,7 @@ test_overrides(){
                 values:
                 - "specialhost"')
   if [ -z "${affinity_match_4}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo '[FAIL] overrides test 4 failed' >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -2072,6 +2129,7 @@ test_overrides(){
                 - "soup"
                 - "chips"')
   if [ -z "${affinity_match_5}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo '[FAIL] overrides test 5 failed' >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -2110,6 +2168,7 @@ test_overrides(){
                 values:
                 - "another_value"')
   if [ -z "${affinity_match_6}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo '[FAIL] overrides test 6 failed' >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -2159,10 +2218,12 @@ _test_apparmor_profile_added(){
   local persist_path='/etc/apparmor.d'
 
   if [ ! -f "${defaults_path}/${profile_file}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected AppArmor profile ${profile_file} to be found on the defaults path ${defaults_path}, but it was not." >> "${TEST_RESULTS}"
     exit 1
   fi
   if [ ! -L "${persist_path}/${profile_file}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected symlink to AppArmor profile ${profile_file} to be found on the persist path ${persist_path}, but it was not." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -2170,6 +2231,7 @@ _test_apparmor_profile_added(){
   profile_loaded=$(grep $profile_name /sys/kernel/security/apparmor/profiles || : )
 
   if [ -z "$profile_loaded" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected AppArmor profile ${profile_file} to be loaded, but it is not." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -2183,10 +2245,12 @@ _test_apparmor_profile_removed(){
   local persist_path='/etc/apparmor.d'
 
   if [ -f "${defaults_path}/${profile_file}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected AppArmor profile ${profile_file} to be removed from the defaults path ${defaults_path}, but it was not." >> "${TEST_RESULTS}"
     exit 1
   fi
   if [ -L "${persist_path}/${profile_file}" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected symlink to AppArmor profile ${profile_file} to be removed from the persist path ${persist_path}, but it was not." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -2194,6 +2258,7 @@ _test_apparmor_profile_removed(){
   profile_loaded=$(grep $profile_name /sys/kernel/security/apparmor/profiles || : )
 
   if [ -n "$profile_loaded" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected AppArmor profile ${profile_file} to be removed, but it is not." >> "${TEST_RESULTS}"
     exit 1
   fi
@@ -2201,6 +2266,7 @@ _test_apparmor_profile_removed(){
   reboot_message_present=$(grep $profile_file /var/run/reboot-required.pkgs || : )
 
   if [ -z "$reboot_message_present" ]; then
+    _dump_pod_log_on_secondary_fail
     echo "[FAIL] Expected removed AppArmor profile ${profile_file} to be found in the reboot-required.pkgs file, but it is not." >> "${TEST_RESULTS}"
     exit 1
   fi
