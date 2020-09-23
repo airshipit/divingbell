@@ -2,7 +2,7 @@
 # vi: set ft=ruby :
 
 Vagrant.configure("2") do |config|
-    config.vm.box = "generic/ubuntu1604"
+    config.vm.box = "generic/ubuntu1804"
 
     [:virtualbox, :parallels, :libvirt, :hyperv].each do |provider|
         config.vm.provider provider do |vplh, override|

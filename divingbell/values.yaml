@@ -18,7 +18,7 @@
 # name: value
 
 images:
-  divingbell: 'ubuntu:16.04'
+  divingbell: 'ubuntu:18.04'
   pull_policy: IfNotPresent
 
 conf:

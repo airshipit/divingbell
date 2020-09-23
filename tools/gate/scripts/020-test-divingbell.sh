@@ -97,7 +97,7 @@ build_all_packages_yaml(){
   set -x
 }
 APT_REPOSITORY1="http://us.archive.ubuntu.com/ubuntu/"
-APT_DISTRIBUTIONS1="[ xenial ]"
+APT_DISTRIBUTIONS1="[ bionic ]"
 APT_COMPONENTS1="[ main, universe, restricted, multiverse ]"
 APT_SUBREPOS1="[ backports, updates ]"
 APT_GPGKEYID1="437D 05B5"
@@ -179,7 +179,7 @@ Twx6DKLF+3rF5nf1F3Q=
 =PBAe
 -----END PGP PUBLIC KEY BLOCK-----"
 APT_REPOSITORY2="http://security.ubuntu.com/ubuntu/"
-APT_DISTRIBUTIONS2="[ xenial ]"
+APT_DISTRIBUTIONS2="[ bionic ]"
 APT_COMPONENTS2="[ main, universe, restricted, multiverse ]"
 APT_SUBREPOS2="[ security ]"
 APT_GPGKEYID2="C0B2 1F32"
@@ -248,7 +248,7 @@ DjfegedFClqpn37b
 =rDTH
 -----END PGP PUBLIC KEY BLOCK-----"
 APT_REPOSITORY3="https://download.ceph.com/debian-mimic/"
-APT_DISTRIBUTIONS3="[ xenial ]"
+APT_DISTRIBUTIONS3="[ bionic ]"
 APT_COMPONENTS3="[ main ]"
 APT_GPGKEYID3="460F 3994"
 APT_GPGKEY3="-----BEGIN PGP PUBLIC KEY BLOCK-----
@@ -280,7 +280,7 @@ vkdivtdqrq2DXY+ftuqLOQ7b+t1RctbcMHGPptlxFuN9ufP5TiTWSpfqDwmHCLsT
 k2vFiMwcHdLpQ1IH8ORVRgPPsiBnBOJ/kIiXG2SxPUTjjEGOVgeA
 =/Tod
 -----END PGP PUBLIC KEY BLOCK-----"
-#deb https://download.ceph.com/debian-mimic/ xenial main
+#deb https://download.ceph.com/debian-mimic/ bionic main
 EXEC_DIR=/var/${NAME}/exec
 # this used in test_overrides to check amount of daemonsets defined
 EXPECTED_NUMBER_OF_DAEMONSETS=17
