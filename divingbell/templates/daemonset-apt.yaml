@@ -43,6 +43,8 @@ spec:
       hostNetwork: true
       hostPID: true
       hostIPC: true
+      nodeSelector:
+        {{ .Values.labels.apt.node_selector_key }}: {{ .Values.labels.apt.node_selector_value }}
       containers:
       - name: {{ $daemonset }}
         image: {{ .Values.images.divingbell }}

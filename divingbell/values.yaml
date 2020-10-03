@@ -267,6 +267,35 @@ network_policy:
     egress:
       - {}
 
+labels:
+  apparmor:
+    node_selector_key: kubernetes.io/os
+    node_selector_value: linux
+  apt:
+    node_selector_key: kubernetes.io/os
+    node_selector_value: linux
+  ethtool:
+    node_selector_key: kubernetes.io/os
+    node_selector_value: linux
+  exec:
+    node_selector_key: kubernetes.io/os
+    node_selector_value: linux
+  limits:
+    node_selector_key: kubernetes.io/os
+    node_selector_value: linux
+  mounts:
+    node_selector_key: kubernetes.io/os
+    node_selector_value: linux
+  perm:
+    node_selector_key: kubernetes.io/os
+    node_selector_value: linux
+  sysctl:
+    node_selector_key: kubernetes.io/os
+    node_selector_value: linux
+  uamlite:
+    node_selector_key: kubernetes.io/os
+    node_selector_value: linux
+
 manifests:
   daemonset_ethtool: true
   daemonset_mounts: true
