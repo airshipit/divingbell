@@ -58,6 +58,7 @@ spec:
           mountPath: /tmp
         - name: rootfs-{{ $daemonset }}
           mountPath: {{ .Values.conf.chroot_mnt_path }}
+          mountPropagation: HostToContainer
         - name: {{ $secretName }}
           mountPath: /tmp/{{ $daemonset }}.sh
           subPath: {{ $daemonset }}
