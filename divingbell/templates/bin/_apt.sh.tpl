@@ -85,6 +85,7 @@ rm -rf /etc/apt/sources.list.d/*
 mv /etc/apt/trusted.gpg.d/divingbell_temp.gpg /etc/apt/trusted.gpg.d/divingbell.gpg
 rm -f /etc/apt/trusted.gpg
 find /etc/apt/trusted.gpg.d/ -type f ! -name 'divingbell.gpg' -exec rm {{ "{}" }} \;
+rm -rf /var/lib/apt/lists/*
 DEBIAN_FRONTEND=noninteractive apt-get update
 {{- end }}
 {{- if hasKey .Values.conf.apt "packages" }}
