@@ -770,6 +770,43 @@ test_perm(){
   _test_perm_value ${p_test_file1} root shadow 640
   _test_perm_value ${p_test_file2} ${p_test_file2##*.} ${p_test_file2##*.} 777
   echo "[SUCCESS] Backup test for perm passed successfully" >> "${TEST_RESULTS}"
+  # Test missing files (default behavior, fail on missing files)
+  echo "conf:
+  perm:
+    paths:
+    -
+      path: /does/not/exist
+      owner: 'root'
+      group: 'shadow'
+      permissions: '0640'
+    -
+      path: ${p_test_file2}
+      owner: 'root'
+      group: 'shadow'
+      permissions: '0640'" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status perm ignore_failure
+  _test_perm_value ${p_test_file2} ${p_test_file2##*.} ${p_test_file2##*.} 777
+  echo '[SUCCESS] perm test fail on missing files passed successfully' >> "${TEST_RESULTS}"
+  # Test missing files (ignore_missing=true, continue if files are missing)
+  echo "conf:
+  perm:
+    ignore_missing: true
+    paths:
+    -
+      path: /does/not/exist
+      owner: 'root'
+      group: 'shadow'
+      permissions: '0640'
+    -
+      path: ${p_test_file2}
+      owner: 'root'
+      group: 'shadow'
+      permissions: '0640'" > "${overrides_yaml}"
+  install_base "--values=${overrides_yaml}"
+  get_container_status perm
+  _test_perm_value ${p_test_file2} root shadow 640
+  echo '[SUCCESS] perm test ignore_missing passed successfully' >> "${TEST_RESULTS}"
   # Test invalid rerun_interval (too short)
   echo "conf:
   perm:

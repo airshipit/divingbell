@@ -46,8 +46,18 @@ add_single_perm(){
   local permissions="${4}"
 
   # check if file exists
-  [ -e $path ] || return 1
   # if set -e is set the entire script will exit
+  # unless values has `conf: { perm: { ignore_missing: true } }`
+  if [ ! -e $path ]; then
+    local msg="$path does not exist"
+    if {{ index (index .Values "conf" "perm" | default dict) "ignore_missing" | default false }}; then
+      log.WARN "${msg}, skipping"
+      return 0
+    else
+      log.ERROR "${msg}"
+      return 1
+    fi
+  fi
 
   # construct backup name
   local file_name=$(systemd-escape $path)
