@@ -86,7 +86,7 @@ add_single_perm(){
 
 revert_perm(){
 # Revert
-  prev_files="$(find "${backup_path}" -type f ! -name last_run_timestamp)"
+  prev_files="$(find "${backup_path}" -maxdepth 1 -type f)"
   if [ -n "${prev_files}" ]; then
     basename -a ${prev_files} | sort > /tmp/prev_perm
     echo "${applied_perm}" | sort > /tmp/curr_perm
@@ -146,8 +146,7 @@ revert_perm(){
 
 cd "${backup_path}"
 
-{{- $_ := set $.Values "__values_hash" list }}
-{{- $hash := $.Values.__values_hash | toString | sha256sum }}
+{{- $hash := $.Values.conf.perm | toString | sha256sum }}
 
 hash={{ $hash | squote }}
 if [ ! -d "${hash}" ]; then
