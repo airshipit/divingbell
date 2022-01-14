@@ -35,13 +35,11 @@ fi
 write_test "${persist_path}"
 
 load_package_list_with_versions(){
-    set +x
     for f in "$@"; do
         IFS="=" read -r name version <<< $f;
         IFS=":" read -r name arch <<< $name;
         CURRENT_PACKAGES["$name"]="$version";
     done
-    set -x
 }
 
 ################################################
@@ -115,7 +113,6 @@ DEBIAN_FRONTEND=noninteractive apt-get update
 dpkg --configure -a --force-confold,confdef
 
 # Perform package installs
-set +x
 {{- if .Values.conf.apt.strict }}
 {{- range $all_apt_packages }}
 {{- $pkg_name := .name }}
@@ -131,7 +128,6 @@ fi
 REQUESTED_PACKAGES="$REQUESTED_PACKAGES {{$pkg_name}}"
 {{- end }}
 {{- end }}
-set -x
 # Run this in case some package installation was interrupted
 DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold {{- if .Values.conf.apt.allow_downgrade }} "--allow-downgrades" {{ end }}{{- if .repo }} -t {{ .repo }}{{ end }} $INSTALLED_THIS_TIME
 {{- end }}
@@ -179,12 +175,10 @@ if [ -f ${persist_path}/packages ]; then
     {{- if .Values.conf.apt.strict }}
     load_package_list_with_versions $(dpkg -l | awk 'NR>5 {print $2"="$3}')
     {{- end }}
-    set +x
     for package in "${!CURRENT_PACKAGES[@]}"
     do
         CURRENT_PACKAGE_NAMES="$CURRENT_PACKAGE_NAMES $package"
     done
-    set -x
     echo $CURRENT_PACKAGE_NAMES | sed 's/ /\n/g' | sed '/^[[:space:]]*$/d' | sort > ${persist_path}/packages.current
     {{- if .Values.conf.apt.strict }}
     TO_DELETE=$(comm -23 ${persist_path}/packages.current ${persist_path}/packages.requested)

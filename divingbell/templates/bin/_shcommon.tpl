@@ -93,7 +93,10 @@ die(){
 }
 export -f die
 trap 'die' ERR
-set -x
+{{- if .Values.conf.extra_verbose }}
+  set -x
+{{- end }}
+
 
 write_test(){
   local write_test_file

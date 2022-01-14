@@ -24,6 +24,7 @@ images:
 conf:
   chroot_mnt_path: '/mnt'
   log_colors: False
+  extra_verbose: False
   apt:
     upgrade: false
     allow_downgrade: false
