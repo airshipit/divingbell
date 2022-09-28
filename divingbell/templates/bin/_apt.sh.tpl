@@ -42,12 +42,26 @@ load_package_list_with_versions(){
     done
 }
 
+wait_for_dpkg_availability(){
+    count=0
+    while lsof /var/lib/dpkg/lock >/dev/null 2>&1; [ $? -eq 0 ]; do
+        log.WARN "dpkg is locked. retrying..."
+        sleep 5
+        count=$((count+1))
+        if [ $count -gt 59 ]; then
+            log.ERROR "dpkg is still locked after 5 minutes, exiting!"
+            exit 7
+        fi
+    done
+}
+
 ################################################
 #Stage 1
 #Collect data
 ################################################
 
 # First 5 lines are field descriptions
+wait_for_dpkg_availability
 load_package_list_with_versions $(dpkg -l | awk 'NR>5 {print $2"="$3}')
 
 ################################################
@@ -110,6 +124,7 @@ DEBIAN_FRONTEND=noninteractive apt-get update
 {{- end }}
 
 # Run dpkg in case of interruption of previous dpkg operation
+wait_for_dpkg_availability
 dpkg --configure -a --force-confold,confdef
 
 # Perform package installs
@@ -129,11 +144,13 @@ REQUESTED_PACKAGES="$REQUESTED_PACKAGES {{$pkg_name}}"
 {{- end }}
 {{- end }}
 # Run this in case some package installation was interrupted
+wait_for_dpkg_availability
 DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold {{- if .Values.conf.apt.allow_downgrade }} "--allow-downgrades" {{ end }}{{- if .repo }} -t {{ .repo }}{{ end }} $INSTALLED_THIS_TIME
 {{- end }}
 
 # Perform package upgrades
 {{- if .Values.conf.apt.upgrade }}
+wait_for_dpkg_availability
 DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true apt-get dist-upgrade \
     -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold
 
@@ -173,6 +190,7 @@ if [ -f ${persist_path}/packages ]; then
     # non-strict mode (which has logic to use the "packages" file it writes so it doesn't touch anything it
     # didn't originally install) it doesn't.
     {{- if .Values.conf.apt.strict }}
+    wait_for_dpkg_availability
     load_package_list_with_versions $(dpkg -l | awk 'NR>5 {print $2"="$3}')
     {{- end }}
     for package in "${!CURRENT_PACKAGES[@]}"
@@ -188,6 +206,7 @@ if [ -f ${persist_path}/packages ]; then
     TO_KEEP=$(echo "$TO_DELETE" | comm -23 ${persist_path}/packages -)
     {{- end }}
     if [ ! -z "$TO_DELETE" ]; then
+        wait_for_dpkg_availability
         dpkg --configure -a --force-confold,confdef
 
         {{- if hasKey .Values.conf.apt "whitelistpkgs" }}
@@ -233,6 +252,7 @@ fi
 ######################################################
 
 {{- if hasKey .Values.conf.apt "blacklistpkgs" }}
+wait_for_dpkg_availability
 dpkg --configure -a --force-confold,confdef
 {{- range .Values.conf.apt.blacklistpkgs }}
   {{- $package := . }}
