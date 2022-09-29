@@ -12,52 +12,43 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-BUILD_DIR       := $(shell mkdir -p build && mktemp -d -p build)
-HELM            := $(shell realpath $(BUILD_DIR))/helm
-TASK            := build
+BUILD_DIR       := $(shell mktemp -d)
+HELM            := $(BUILD_DIR)/helm
 
-EXCLUDES        := helm-toolkit docs tests tools logs
-CHARTS          := $(filter-out $(EXCLUDES), $(patsubst %/.,%,$(wildcard */.)))
-CHART           := divingbell
+all: charts
 
-export
 
-all: $(CHART)
+.PHONY: charts
+charts: clean helm-install helm-toolkit
+	$(HELM) dependency update divingbell
+	$(HELM) package divingbell
 
-$(CHART):
-	@echo
-	@echo "===== Processing [$@] chart ====="
-	@make $(TASK)-$@
 
-init-%: clean helm-install
-	DEP_UP_LIST=$* tools/helm_tk.sh $(HELM)
+# Perform Linting
+.PHONY: lint
+lint: helm_lint build_docs
 
-lint-%: init-%
-	if [ -d $* ]; then $(HELM) lint $*; fi
+# Dry run templating of chart
+.PHONY: dry-run
+dry-run: clean helm-toolkit
+	$(HELM) template divingbell
 
-dryrun-%: init-%
-	$(HELM) template $*
-
-build-%: lint-%
-	if [ -d $* ]; then $(HELM) package $*; fi
-
+.PHONY: clean
 clean:
+	rm -rf build
+	rm -rf docs/build
+	rm -rf deps
 	@echo "Removed .b64, _partials.tpl, and _globals.tpl files"
 	rm -rf helm-toolkit/secrets/*.b64
 	rm -rf */templates/_partials.tpl
 	rm -rf */templates/_globals.tpl
-	rm -rf doc/build
+	rm -f *.tgz
+	rm -f */charts/*.tgz
 
-.PHONY: $(EXCLUDES) $(CHARTS)
-
-.PHONY: charts
-charts: clean build-$(CHART)
-
-# TODO This needs to run the equivalent of what is in
-#      divingbell/tools/gate/setup.sh + test.sh . At present, this is
-#      being investigated on how to bring it up to date.
-.PHONY: tests
-tests: charts
+.PHONY: helm_lint
+helm_lint: clean helm-toolkit
+	$(HELM) dependency update divingbell
+	$(HELM) lint divingbell
 
 .PHONY: docs
 docs: clean build_docs
@@ -66,6 +57,12 @@ docs: clean build_docs
 build_docs:
 	tox -e docs
 
+# Initialize local helm config
+.PHONY: helm-toolkit
+helm-toolkit: helm-install
+	tools/helm_tk.sh $(HELM)
+
+# Install helm binary
 .PHONY: helm-install
 helm-install:
 	tools/helm_install.sh $(HELM)

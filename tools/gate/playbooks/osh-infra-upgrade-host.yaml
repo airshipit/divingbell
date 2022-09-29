@@ -35,10 +35,12 @@
     - upgrade-host
     - start-zuul-console
     - disable-local-nameserver
+    - setup-firewall
   tags:
     - upgrade-host
     - start-zuul-console
     - disable-local-nameserver
+    - setup-firewall
 
 - hosts: all
   vars_files:

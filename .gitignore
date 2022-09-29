@@ -76,3 +76,5 @@ logs/
 */requirements.lock
 */charts
 */charts/*
+
+deps/

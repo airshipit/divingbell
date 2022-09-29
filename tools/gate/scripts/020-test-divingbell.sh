@@ -29,6 +29,7 @@ fi
 DEFAULT_IFS=$IFS
 
 NAME=divingbell
+kubectl create namespace "${NAME}"
 : ${LOGS_DIR:=/tmp/artifacts}
 : ${LOGS_SUBDIR:=${LOGS_DIR}/${NAME}/$(date +"%m-%d-%y_%H:%M:%S")}
 mkdir -p "${LOGS_SUBDIR}"
@@ -284,6 +285,7 @@ k2vFiMwcHdLpQ1IH8ORVRgPPsiBnBOJ/kIiXG2SxPUTjjEGOVgeA
 EXEC_DIR=/var/${NAME}/exec
 # this used in test_overrides to check amount of daemonsets defined
 EXPECTED_NUMBER_OF_DAEMONSETS=17
+apt update
 type lshw || apt -y install lshw
 type apparmor_parser || apt -y install apparmor
 type ethtool || apt -y install ethtool
@@ -323,7 +325,7 @@ wait_for_tiller_ready(){
   while [ $retries -gt 0 ]; do
     # the message typically returned before tiller is ready is
     # 'Error: could not find a ready tiller pod'
-    helm_error="$(helm list ${NAME} 2>&1 | grep 'Error')"
+    helm_error="$(helm status ${NAME} 2>&1 | grep 'Error')"
     if [ -z "${helm_error}" ]; then return 0; fi
     sleep 10
     (( retries-- ))
@@ -334,9 +336,9 @@ wait_for_tiller_ready(){
 
 purge_containers(){
   local chart_status
-  chart_status="$(helm list ${NAME})"
+  chart_status="$(helm status ${NAME})"
   if [ -n "${chart_status}" ]; then
-    helm delete --purge ${NAME}
+    helm uninstall ${NAME}
   fi
 }
 
@@ -391,7 +393,7 @@ _reset_account(){
 }
 
 init_default_state(){
-  wait_for_tiller_ready
+  # wait_for_tiller_ready
   purge_containers
   clean_persistent_files
   # set sysctl original vals
@@ -413,15 +415,15 @@ init_default_state(){
 
 install(){
   purge_containers
-  helm install --name="${NAME}" --debug "${NAME}" --namespace="${NAME}" "$@"
+  helm upgrade --install "${NAME}" "${NAME}" --namespace="${NAME}" --debug  "$@"
 }
 
 upgrade(){
-  helm upgrade --name="${NAME}" --debug "${NAME}" --namespace="${NAME}" "$@"
+  helm upgrade --install "${NAME}" "${NAME}" --namespace="${NAME}" --debug "$@"
 }
 
 dry_run(){
-  helm install --name="${NAME}" --dry-run --debug "${NAME}" --namespace="${NAME}" "$@"
+  helm upgrade --install "${NAME}" "${NAME}" --namespace="${NAME}" --dry-run --debug "$@"
 }
 
 # parameter 1 to get_container_status is the module name (e.g., "apt")
