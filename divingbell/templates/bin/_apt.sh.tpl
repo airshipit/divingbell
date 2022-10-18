@@ -18,6 +18,8 @@
 
 set -e
 
+rm -rf /tmp/done
+
 cat <<'EOF' > {{ .Values.conf.chroot_mnt_path | quote }}/tmp/apt.sh
 {{ include "divingbell.shcommon" . }}
 
@@ -265,6 +267,8 @@ EOF
 
 chmod 755 {{ .Values.conf.chroot_mnt_path | quote }}/tmp/apt.sh
 chroot {{ .Values.conf.chroot_mnt_path | quote }} /tmp/apt.sh
+
+touch /tmp/done
 
 while [ 1 ]; do
   sleep 300

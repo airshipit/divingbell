@@ -14,6 +14,13 @@
 # limitations under the License.
 */}}
 
+{{- define "readinessProbeTemplate" }}
+  exec:
+    command:
+    - cat
+    - /tmp/done
+{{- end }}
+
 {{- define "divingbell.daemonset.apt" }}
   {{- $daemonset := index . 0 }}
   {{- $secretName := index . 1 }}
@@ -51,6 +58,7 @@ spec:
         imagePullPolicy: {{ .Values.images.pull_policy }}
 {{ tuple $envAll $envAll.Values.pod.resources.apt | include "helm-toolkit.snippets.kubernetes_resources" | indent 8 }}
 {{ dict "envAll" $envAll "application" "divingbell" "container" "apt" | include "helm-toolkit.snippets.kubernetes_container_security_context" | indent 8 }}
+{{ dict "envAll" $envAll "component" "divingbell" "container" "apt" "type" "readiness" "probeTemplate" (include "readinessProbeTemplate" $envAll | fromYaml) | include "helm-toolkit.snippets.kubernetes_probe" | indent 8 }}
         command:
         - /tmp/{{ $daemonset }}.sh
         volumeMounts:

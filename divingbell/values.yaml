@@ -261,6 +261,15 @@ pod:
       requests:
         memory: "128Mi"
         cpu: "100m"
+  probes:
+    divingbell:
+      apt:
+        readiness:
+          enabled: true
+          params:
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 120
 
 network_policy:
   divingbell:
